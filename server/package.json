@@ -1,0 +1,52 @@
+{
+  "name": "telegraphe-server",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "engines": {
+    "node": ">=20"
+  },
+  "scripts": {
+    "build": "tsc -p tsconfig.json",
+    "dev": "tsx watch src/index.ts",
+    "start": "node dist/index.js",
+    "lint": "eslint .",
+    "typecheck": "tsc --noEmit -p tsconfig.json",
+    "format": "prettier --write .",
+    "format:check": "prettier --check .",
+    "test": "vitest run",
+    "migrate": "tsx src/migrate.ts",
+    "proto:generate": "mkdir -p src/generated && grpc_tools_node_protoc --plugin=protoc-gen-ts_proto=./node_modules/.bin/protoc-gen-ts_proto --ts_proto_out=src/generated --ts_proto_opt=esModuleInterop=true,outputEncodeMethods=true,outputJsonMethods=false,outputClientImpl=false,forceLong=number -I ../proto ../proto/telegraphe.proto",
+    "proto:check": "node scripts/check-proto.mjs"
+  },
+  "dependencies": {
+    "@fastify/cors": "^10.0.2",
+    "@fastify/jwt": "^9.1.0",
+    "@fastify/rate-limit": "^10.1.0",
+    "@fastify/websocket": "^11.3.4",
+    "argon2": "^0.41.1",
+    "dotenv": "^16.4.7",
+    "firebase-admin": "^13.4.0",
+    "fastify": "^5.2.1",
+    "ioredis": "^6.0.0",
+    "nodemailer": "^6.9.16",
+    "pg": "^8.13.1",
+    "protobufjs": "^8.8.0",
+    "ws": "^8.22.0",
+    "zod": "^3.24.2"
+  },
+  "devDependencies": {
+    "@types/node": "^22.13.4",
+    "@types/nodemailer": "^6.4.17",
+    "@types/pg": "^8.11.11",
+    "@types/ws": "^8.18.2",
+    "eslint": "^9.20.1",
+    "eslint-config-prettier": "^10.0.1",
+    "grpc-tools": "^1.13.1",
+    "prettier": "^3.5.0",
+    "ts-proto": "^2.13.0",
+    "tsx": "^4.19.3",
+    "typescript": "^5.7.3",
+    "vitest": "^3.0.6"
+  }
+}

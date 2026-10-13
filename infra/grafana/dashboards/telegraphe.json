@@ -1,0 +1,9 @@
+{
+  "title": "Telegraphe",
+  "schemaVersion": 39,
+  "panels": [
+    {"type":"timeseries","title":"Connexions actives","targets":[{"expr":"telegraphe_active_connections"}],"gridPos":{"h":8,"w":12,"x":0,"y":0}},
+    {"type":"timeseries","title":"Latence de livraison (p95 approximée)","targets":[{"expr":"telegraphe_delivery_latency_seconds_sum / clamp_min(telegraphe_delivery_latency_seconds_count, 1)"}],"gridPos":{"h":8,"w":12,"x":12,"y":0}},
+    {"type":"timeseries","title":"Taille de la boîte aux lettres","targets":[{"expr":"telegraphe_mailbox_size"}],"gridPos":{"h":8,"w":24,"x":0,"y":8}}
+  ]
+}

@@ -1,0 +1,26 @@
+{
+  "sourceLanguage" : "en",
+  "strings" : {
+    "NSCameraUsageDescription" : {
+      "localizations" : {
+        "fr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Telegraphe utilise la caméra pour envoyer des photos et des vidéos dans vos conversations."
+          }
+        }
+      }
+    },
+    "NSPhotoLibraryUsageDescription" : {
+      "localizations" : {
+        "fr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Telegraphe utilise votre photothèque pour choisir des photos et des vidéos à partager."
+          }
+        }
+      }
+    }
+  },
+  "version" : "1.0"
+}

@@ -1,0 +1,12 @@
+{
+  "dependencies": {
+    "ioredis": "^6.0.0",
+    "protobufjs": "^8.8.0",
+    "ws": "^8.22.0"
+  },
+  "devDependencies": {
+    "@types/ws": "^8.18.2",
+    "grpc-tools": "^1.13.1",
+    "ts-proto": "^2.13.0"
+  }
+}

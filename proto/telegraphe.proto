@@ -1,0 +1,100 @@
+syntax = "proto3";
+
+package telegraphe.v1;
+
+option java_package = "com.telegraphe.protocol.v1";
+
+enum EnvelopeType {
+  ENVELOPE_TYPE_UNSPECIFIED = 0;
+  HANDSHAKE = 1;
+  HANDSHAKE_ACK = 2;
+  SEND_TEXT = 3;
+  SERVER_ACK = 4;
+  DELIVERED = 5;
+  READ = 6;
+  TYPING = 7;
+  PRESENCE = 8;
+  ERROR = 9;
+  SYSTEM_EVENT = 10;
+  SEND_MEDIA = 11;
+}
+
+message Envelope {
+  EnvelopeType type = 1;
+  string client_id = 2;
+  int64 timestamp_ms = 3;
+  string conversation_id = 4;
+  string sender_device_id = 5;
+  uint32 encryption_version = 6;
+  bytes payload = 7;
+}
+
+message Handshake {
+  uint32 protocol_version = 1;
+  string device_id = 2;
+}
+
+message HandshakeAck {
+  uint32 protocol_version = 1;
+}
+
+message TextMessage {
+  string recipient_user_id = 1;
+  string recipient_device_id = 2;
+  string text = 3;
+}
+
+message MediaMessage {
+  enum Kind {
+    KIND_UNSPECIFIED = 0;
+    PHOTO = 1;
+    VIDEO = 2;
+  }
+  string media_id = 1;
+  Kind kind = 2;
+  uint32 width = 3;
+  uint32 height = 4;
+  uint32 duration_seconds = 5;
+  string thumbnail_media_id = 6;
+}
+
+message ServerAck {
+  string message_client_id = 1;
+  bool accepted = 2;
+  bool duplicate = 3;
+  int64 mailbox_id = 4;
+}
+
+message Receipt {
+  string message_client_id = 1;
+  string target_device_id = 2;
+}
+
+message Typing {
+  bool is_typing = 1;
+  string target_device_id = 2;
+}
+
+message Presence {
+  bool online = 1;
+  string target_device_id = 2;
+}
+
+message Error {
+  string code = 1;
+  string message = 2;
+}
+
+message SystemEvent {
+  enum Kind {
+    KIND_UNSPECIFIED = 0;
+    MEMBER_ADDED = 1;
+    MEMBER_REMOVED = 2;
+    NAME_CHANGED = 3;
+    MEMBER_PROMOTED = 4;
+  }
+  Kind kind = 1;
+  string actor_user_id = 2;
+  string subject_user_id = 3;
+  string text = 4;
+}

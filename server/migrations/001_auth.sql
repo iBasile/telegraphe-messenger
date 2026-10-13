@@ -1,0 +1,23 @@
+CREATE TABLE IF NOT EXISTS users (
+ id UUID PRIMARY KEY, email TEXT NOT NULL UNIQUE, password_hash TEXT NOT NULL,
+ display_name TEXT NOT NULL, avatar_url TEXT, email_verified_at TIMESTAMPTZ,
+ created_at TIMESTAMPTZ NOT NULL DEFAULT now(), updated_at TIMESTAMPTZ NOT NULL DEFAULT now()
+);
+CREATE TABLE IF NOT EXISTS devices (
+ id UUID PRIMARY KEY, user_id UUID NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+ name TEXT, created_at TIMESTAMPTZ NOT NULL DEFAULT now(), last_seen_at TIMESTAMPTZ NOT NULL DEFAULT now()
+);
+CREATE TABLE IF NOT EXISTS sessions (
+ id UUID PRIMARY KEY, user_id UUID NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+ device_id UUID NOT NULL REFERENCES devices(id) ON DELETE CASCADE, refresh_token_hash TEXT NOT NULL,
+ expires_at TIMESTAMPTZ NOT NULL, revoked_at TIMESTAMPTZ, created_at TIMESTAMPTZ NOT NULL DEFAULT now()
+);
+CREATE INDEX IF NOT EXISTS sessions_device_idx ON sessions(device_id);
+CREATE TABLE IF NOT EXISTS email_verification_tokens (
+ token_hash TEXT PRIMARY KEY, user_id UUID NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+ expires_at TIMESTAMPTZ NOT NULL, used_at TIMESTAMPTZ
+);
+CREATE TABLE IF NOT EXISTS password_reset_tokens (
+ token_hash TEXT PRIMARY KEY, user_id UUID NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+ expires_at TIMESTAMPTZ NOT NULL, used_at TIMESTAMPTZ
+);

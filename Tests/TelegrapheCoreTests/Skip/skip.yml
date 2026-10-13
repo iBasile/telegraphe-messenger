@@ -1,0 +1,3 @@
+# Skip configuration for native Core tests.
+skip:
+  mode: 'native'
