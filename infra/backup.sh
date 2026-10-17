@@ -1,5 +1,6 @@
 #!/bin/sh
 set -eu
+umask 077
 
 : "${BACKUP_DIR:?BACKUP_DIR is required}"
 : "${BACKUP_PASSPHRASE:?BACKUP_PASSPHRASE is required}"

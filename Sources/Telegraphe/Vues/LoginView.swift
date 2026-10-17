@@ -5,30 +5,36 @@ struct LoginView: View {
     @State var mode: LoginMode = .login
 
     var body: some View {
-        GeometryReader { geometry in
-            ZStack(alignment: .top) {
-                LinearGradient(colors: [TelegrapheTheme.accent, TelegrapheTheme.accentDeep],
-                               startPoint: .topLeading, endPoint: .bottomTrailing)
-                    .ignoresSafeArea()
-                ScrollView {
-                    VStack(spacing: TelegrapheTheme.spaceXL) {
-                        VStack(spacing: TelegrapheTheme.spaceS) {
+        NavigationStack {
+            ScrollView {
+                VStack(alignment: .leading, spacing: 28) {
+                    VStack(alignment: .leading, spacing: 18) {
+                        ZStack {
+                            RoundedRectangle(cornerRadius: 26)
+                                .fill(TelegrapheTheme.accentSoft.gradient)
+                                .frame(width: 76, height: 76)
                             Image(systemName: "bubble.left.and.bubble.right.fill")
-                                .font(.system(size: 44))
-                                .foregroundStyle(TelegrapheTheme.onAccent)
-                                .frame(width: 80, height: 80)
-                                .background(TelegrapheTheme.onAccent.opacity(0.18), in: RoundedRectangle(cornerRadius: 24))
-                            Text("Telegraphe").font(.largeTitle.weight(.bold)).foregroundStyle(TelegrapheTheme.onAccent)
-                            Text(mode == .login ? "Connectez-vous pour continuer" : "Créez votre compte")
-                                .foregroundStyle(TelegrapheTheme.onAccent.opacity(0.88))
+                                .font(.system(size: 32, weight: .semibold))
+                                .foregroundStyle(TelegrapheTheme.accent)
                         }
-                        .padding(.top, TelegrapheTheme.spaceXXL)
-                        authCard
+                        VStack(alignment: .leading, spacing: 8) {
+                            Text(mode == .register ? "Rejoignez la conversation !" : "Bienvenue sur Telegraphe !")
+                                .font(.system(.largeTitle, design: .rounded, weight: .bold))
+                            Text(mode == .register ? "Créez votre compte Telegraphe." : "Connectez-vous avec votre compte Telegraphe.")
+                                .font(.body)
+                                .foregroundStyle(TelegrapheTheme.secondaryText)
+                        }
                     }
-                    .padding(.horizontal, TelegrapheTheme.spaceL)
-                    .frame(minHeight: max(geometry.size.height - 20, 560))
+                    .padding(.top, 28)
+                    authCard
+                    .padding(.bottom, 28)
                 }
+                .padding(.horizontal, TelegrapheTheme.spaceXL)
+                .padding(.top, 8)
+                .frame(maxWidth: .infinity, alignment: .leading)
             }
+            .background(TelegrapheTheme.background)
+            .toolbar(.hidden, for: .navigationBar)
         }
     }
 
@@ -41,9 +47,7 @@ struct LoginView: View {
             case .verify: VerifyEmailForm(viewModel: viewModel, mode: $mode)
             }
         }
-        .padding(TelegrapheTheme.spaceL)
-        .background(TelegrapheTheme.surface, in: RoundedRectangle(cornerRadius: 24))
-        .shadow(color: TelegrapheTheme.shadow, radius: 18, y: 8)
+        .padding(.top, 2)
     }
 }
 
@@ -82,7 +86,7 @@ struct LoginForm: View {
     @State var email = ""
     @State var password = ""
     var body: some View {
-        VStack(spacing: TelegrapheTheme.spaceM) {
+        VStack(spacing: 16) {
             AuthField(symbol: "envelope", title: "E-mail", text: $email)
             AuthField(symbol: "lock", title: "Mot de passe", text: $password, isSecure: true)
             AuthErrorLabel(message: viewModel.authErrorMessage)
@@ -90,7 +94,14 @@ struct LoginForm: View {
                 .orangeButton().disabled(viewModel.isAuthLoading)
             if viewModel.isAuthLoading { ProgressView().tint(TelegrapheTheme.accent) }
             Button("Mot de passe oublié ?") { mode = .forgot }.foregroundStyle(TelegrapheTheme.accentDeep)
-            Button("Pas encore de compte ?  S’inscrire") { mode = .register }.foregroundStyle(TelegrapheTheme.secondaryText)
+            HStack(spacing: 5) {
+                Text("Pas encore de compte ?").foregroundStyle(TelegrapheTheme.secondaryText)
+                Button("S’inscrire") { withAnimation(.easeInOut(duration: 0.2)) { mode = .register } }
+                    .fontWeight(.semibold)
+                    .foregroundStyle(TelegrapheTheme.accent)
+            }
+            .font(.subheadline)
+            .frame(maxWidth: .infinity)
         }
     }
 }
@@ -111,7 +122,7 @@ struct RegisterForm: View {
             AuthErrorLabel(message: viewModel.authErrorMessage)
             Button("Créer le compte") { Task { await viewModel.register(email: email, password: password, confirmation: confirmation, displayName: displayName) } }
                 .orangeButton().disabled(viewModel.isAuthLoading)
-            Button("J’ai déjà un compte") { mode = .login }.foregroundStyle(TelegrapheTheme.accentDeep)
+            Button("J’ai déjà un compte") { withAnimation(.easeInOut(duration: 0.2)) { mode = .login } }.foregroundStyle(TelegrapheTheme.accent)
         }
         .onChange(of: viewModel.sessionState) { _, state in if state == .emailVerificationRequired { mode = .verify } }
     }

@@ -9,6 +9,7 @@ import {
   ErrorCodec,
   HandshakeAckCodec,
   HandshakeCodec,
+  MediaMessageCodec,
   PresenceCodec,
   ReceiptCodec,
   ServerAckCodec,
@@ -24,6 +25,10 @@ import { Metrics } from './metrics.js';
 import type { NotificationQueue } from './notifications.js';
 
 export const PROTOCOL_VERSION = 1;
+const UUID_REGEX = /^[0-9a-f]{8}-[0-9a-f]{4}-[1-8][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
+export const isValidUUID = (value: unknown): value is string =>
+  typeof value === 'string' && UUID_REGEX.test(value);
+
 const textMessage = z.object({
   recipientUserId: z.string().uuid(),
   recipientDeviceId: z.string().uuid(),
@@ -58,7 +63,11 @@ export async function registerWebSocket(
   app: FastifyInstance,
   options: WebSocketOptions,
 ): Promise<void> {
-  await app.register(import('@fastify/websocket'));
+  await app.register(import('@fastify/websocket'), {
+    options: {
+      maxPayload: 1024 * 1024, // 1MB maximum payload per frame
+    },
+  });
   app.get('/ws', { websocket: true }, (socket: WebSocket, request) => {
     void handleConnection(app, socket, request.headers.authorization, options);
   });
@@ -81,6 +90,20 @@ async function handleConnection(
     auth = app.jwt.verify<{ sub: string; deviceId: string }>(token);
   } catch {
     socket.close(4001, 'Jeton invalide');
+    return;
+  }
+
+  if (!isValidUUID(auth.sub) || !isValidUUID(auth.deviceId)) {
+    socket.close(4001, 'Jeton invalide');
+    return;
+  }
+
+  const deviceRow = await options.db.query(
+    'SELECT 1 FROM devices WHERE id=$1 AND user_id=$2',
+    [auth.deviceId, auth.sub],
+  );
+  if (!deviceRow.rowCount) {
+    socket.close(4001, 'Appareil ou utilisateur invalide');
     return;
   }
 
@@ -116,77 +139,82 @@ async function handleConnection(
     void disconnect();
   });
   socket.on('message', (raw: RawData) => {
-    void processMessage(new Uint8Array(raw as Buffer));
+    void processMessage(new Uint8Array(raw as Buffer)).catch((err) => {
+      app.log.error(err, 'Unhandled error processing websocket message');
+      send(errorEnvelope('SERVER_ERROR', 'Une erreur interne est survenue'));
+    });
   });
 
   async function processMessage(raw: Uint8Array): Promise<void> {
-    if (Date.now() - messageWindowStarted >= 60_000) {
-      messageWindowStarted = Date.now();
-      messageCount = 0;
-    }
-    messageCount += 1;
-    if (messageCount > (options.messageRateMax ?? 60)) {
-      send(errorEnvelope('RATE_LIMITED', 'Trop de messages envoyés'));
-      return;
-    }
-    let incoming: Envelope;
     try {
-      incoming = EnvelopeCodec.decode(raw);
-    } catch {
-      send(errorEnvelope('INVALID_PROTOBUF', 'Message binaire invalide'));
-      return;
-    }
-
-    if (!handshaken) {
-      if (incoming.type !== EnvelopeType.HANDSHAKE) {
-        socket.close(4002, 'Poignée de main requise');
+      if (raw.length > 1024 * 1024) {
+        send(errorEnvelope('PAYLOAD_TOO_LARGE', 'Message trop volumineux'));
         return;
       }
-      const hello = HandshakeCodec.decode(incoming.payload ?? new Uint8Array());
-      if (hello.protocolVersion !== protocolVersion || hello.deviceId !== auth.deviceId) {
-        send(errorEnvelope('UNSUPPORTED_PROTOCOL', 'Version de protocole incompatible'));
-        socket.close(4003, 'Version de protocole incompatible');
+      if (Date.now() - messageWindowStarted >= 60_000) {
+        messageWindowStarted = Date.now();
+        messageCount = 0;
+      }
+      messageCount += 1;
+      if (messageCount > (options.messageRateMax ?? 60)) {
+        send(errorEnvelope('RATE_LIMITED', 'Trop de messages envoyés'));
         return;
       }
-      handshaken = true;
-      clearTimeout(handshakeTimeout);
-      send(
-        envelope({
-          type: EnvelopeType.HANDSHAKE_ACK,
-          timestampMs: Date.now(),
-          senderDeviceId: auth.deviceId,
-          encryptionVersion: 0,
-          payload: HandshakeAckCodec.encode({ protocolVersion }).finish(),
-        }),
-      );
-      for (const item of await options.mailbox.pending(auth.deviceId)) send(item.envelope);
-      return;
-    }
+      let incoming: Envelope;
+      try {
+        incoming = EnvelopeCodec.decode(raw);
+      } catch {
+        send(errorEnvelope('INVALID_PROTOBUF', 'Message binaire invalide'));
+        return;
+      }
 
-    if (incoming.encryptionVersion !== 0 || incoming.senderDeviceId !== auth.deviceId) {
-      send(errorEnvelope('INVALID_ENVELOPE', 'Enveloppe non valide'));
-      return;
-    }
+      if (!handshaken) {
+        if (incoming.type !== EnvelopeType.HANDSHAKE) {
+          socket.close(4002, 'Poignée de main requise');
+          return;
+        }
+        const hello = HandshakeCodec.decode(incoming.payload ?? new Uint8Array());
+        if (hello.protocolVersion !== protocolVersion || hello.deviceId !== auth.deviceId) {
+          send(errorEnvelope('UNSUPPORTED_PROTOCOL', 'Version de protocole incompatible'));
+          socket.close(4003, 'Version de protocole incompatible');
+          return;
+        }
+        handshaken = true;
+        clearTimeout(handshakeTimeout);
+        send(
+          envelope({
+            type: EnvelopeType.HANDSHAKE_ACK,
+            timestampMs: Date.now(),
+            senderDeviceId: auth.deviceId,
+            encryptionVersion: 0,
+            payload: HandshakeAckCodec.encode({ protocolVersion }).finish(),
+          }),
+        );
+        for (const item of await options.mailbox.pending(auth.deviceId)) send(item.envelope);
+        return;
+      }
 
-    if (incoming.type === EnvelopeType.SEND_TEXT) {
-      await handleText(incoming);
-    } else if (incoming.type === EnvelopeType.DELIVERED || incoming.type === EnvelopeType.READ) {
-      await handleReceipt(incoming);
-    } else if (incoming.type === EnvelopeType.TYPING) {
-      const typing = TypingCodec.decode(incoming.payload ?? new Uint8Array());
-      await options.presence.setTyping(
-        incoming.conversationId ?? '',
-        auth.deviceId,
-        !!typing.isTyping,
-      );
-      if (typing.targetDeviceId)
-        await options.router.route(typing.targetDeviceId, envelope(incoming));
-    } else if (incoming.type === EnvelopeType.PRESENCE) {
-      const presence = PresenceCodec.decode(incoming.payload ?? new Uint8Array());
-      if (presence.targetDeviceId)
-        await options.router.route(presence.targetDeviceId, envelope(incoming));
-    } else {
-      send(errorEnvelope('UNSUPPORTED_TYPE', 'Type de message non pris en charge'));
+      if (incoming.encryptionVersion !== 0 || incoming.senderDeviceId !== auth.deviceId) {
+        send(errorEnvelope('INVALID_ENVELOPE', 'Enveloppe non valide'));
+        return;
+      }
+
+      if (incoming.type === EnvelopeType.SEND_TEXT) {
+        await handleText(incoming);
+      } else if (incoming.type === EnvelopeType.SEND_MEDIA) {
+        await handleMedia(incoming);
+      } else if (incoming.type === EnvelopeType.DELIVERED || incoming.type === EnvelopeType.READ) {
+        await handleReceipt(incoming);
+      } else if (incoming.type === EnvelopeType.TYPING) {
+        await handleTyping(incoming);
+      } else if (incoming.type === EnvelopeType.PRESENCE) {
+        await handlePresence(incoming);
+      } else {
+        send(errorEnvelope('UNSUPPORTED_TYPE', 'Type de message non pris en charge'));
+      }
+    } catch (err) {
+      app.log.error(err, 'Error processing message');
+      send(errorEnvelope('SERVER_ERROR', 'Erreur lors du traitement du message'));
     }
   }
 
@@ -194,11 +222,24 @@ async function handleConnection(
     const parsed = textMessage.safeParse(
       TextMessageCodec.decode(incoming.payload ?? new Uint8Array()),
     );
-    if (!parsed.success || !incoming.clientId || !incoming.conversationId) {
+    if (!parsed.success || !isValidUUID(incoming.clientId) || !isValidUUID(incoming.conversationId)) {
       send(errorEnvelope('INVALID_TEXT', 'Message texte invalide'));
       return;
     }
+    if (auth.deviceId === parsed.data.recipientDeviceId) {
+      send(errorEnvelope('INVALID_RECIPIENT', 'Impossible d’envoyer un message à son propre appareil'));
+      return;
+    }
+    const groupCheck = await options.db.query('SELECT 1 FROM conversations WHERE id=$1', [
+      incoming.conversationId,
+    ]);
     const isGroup = Boolean(await groupRole(options.db, incoming.conversationId, auth.sub));
+    if (groupCheck.rowCount && !isGroup) {
+      send(errorEnvelope('FORBIDDEN', 'Vous ne faites pas partie de ce groupe'));
+      return;
+    }
+    incoming.timestampMs = Date.now();
+
     if (isGroup) {
       const members = await groupMemberDevices(options.db, incoming.conversationId, auth.sub);
       for (const member of members) {
@@ -286,16 +327,92 @@ async function handleConnection(
     );
   }
 
+  async function handleMedia(incoming: Envelope): Promise<void> {
+    if (!isValidUUID(incoming.clientId) || !isValidUUID(incoming.conversationId)) {
+      send(errorEnvelope('INVALID_MEDIA', 'Identifiant de message ou de conversation invalide'));
+      return;
+    }
+    let mediaMsg;
+    try {
+      mediaMsg = MediaMessageCodec.decode(incoming.payload ?? new Uint8Array());
+    } catch {
+      send(errorEnvelope('INVALID_MEDIA', 'Payload média invalide'));
+      return;
+    }
+    if (!mediaMsg.mediaId || !isValidUUID(mediaMsg.mediaId)) {
+      send(errorEnvelope('INVALID_MEDIA', 'Identifiant média invalide'));
+      return;
+    }
+    const mediaCheck = await options.db.query(
+      'SELECT 1 FROM media WHERE id=$1 AND conversation_id=$2 AND owner_user_id=$3 AND expires_at>now()',
+      [mediaMsg.mediaId, incoming.conversationId, auth.sub],
+    );
+    if (!mediaCheck.rowCount) {
+      send(errorEnvelope('MEDIA_NOT_FOUND', 'Média introuvable ou expiré'));
+      return;
+    }
+    const groupCheck = await options.db.query('SELECT 1 FROM conversations WHERE id=$1', [
+      incoming.conversationId,
+    ]);
+    const isGroup = Boolean(await groupRole(options.db, incoming.conversationId, auth.sub));
+    if (groupCheck.rowCount && !isGroup) {
+      send(errorEnvelope('FORBIDDEN', 'Vous ne faites pas partie de ce groupe'));
+      return;
+    }
+    incoming.timestampMs = Date.now();
+    if (isGroup) {
+      const members = await groupMemberDevices(options.db, incoming.conversationId, auth.sub);
+      for (const member of members) {
+        const stored = await options.mailbox.store({
+          recipientUserId: member.userId,
+          recipientDeviceId: member.deviceId,
+          senderUserId: auth.sub,
+          conversationId: incoming.conversationId,
+          clientId: incoming.clientId,
+          envelope: envelope(incoming),
+        });
+        if (!stored.duplicate) {
+          const live = await options.router.route(member.deviceId, envelope(incoming));
+          if (!live)
+            await options.notificationQueue?.enqueue({
+              deviceId: member.deviceId,
+              clientId: incoming.clientId,
+            });
+          options.metrics &&
+            ((options.metrics.deliveryLatencySeconds +=
+              Math.max(0, Date.now() - Number(incoming.timestampMs ?? Date.now())) / 1000),
+            (options.metrics.deliveredMessages += 1));
+        }
+      }
+      send(
+        envelope({
+          type: EnvelopeType.SERVER_ACK,
+          clientId: incoming.clientId,
+          timestampMs: Date.now(),
+          conversationId: incoming.conversationId,
+          senderDeviceId: auth.deviceId,
+          encryptionVersion: 0,
+          payload: ServerAckCodec.encode({
+            messageClientId: incoming.clientId,
+            accepted: true,
+            duplicate: false,
+          }).finish(),
+        }),
+      );
+    }
+  }
+
   async function handleReceipt(incoming: Envelope): Promise<void> {
     const receipt = ReceiptCodec.decode(incoming.payload ?? new Uint8Array());
-    if (!receipt.messageClientId) return;
+    if (!receipt.messageClientId || !isValidUUID(receipt.messageClientId)) return;
+    if (receipt.targetDeviceId && !isValidUUID(receipt.targetDeviceId)) return;
     const item =
       incoming.type === EnvelopeType.DELIVERED
         ? await options.mailbox.acknowledge(auth.deviceId, receipt.messageClientId)
         : undefined;
     const targetDeviceId =
       receipt.targetDeviceId ?? (item ? EnvelopeCodec.decode(item.envelope).senderDeviceId : '');
-    if (!targetDeviceId) return;
+    if (!targetDeviceId || !isValidUUID(targetDeviceId)) return;
     await options.router.route(
       targetDeviceId,
       envelope({
@@ -304,5 +421,36 @@ async function handleConnection(
         clientId: receipt.messageClientId,
       }),
     );
+  }
+
+  async function handleTyping(incoming: Envelope): Promise<void> {
+    const typing = TypingCodec.decode(incoming.payload ?? new Uint8Array());
+    if (incoming.conversationId && !isValidUUID(incoming.conversationId)) return;
+    if (typing.targetDeviceId && !isValidUUID(typing.targetDeviceId)) return;
+    if (incoming.conversationId) {
+      const groupCheck = await options.db.query('SELECT 1 FROM conversations WHERE id=$1', [
+        incoming.conversationId,
+      ]);
+      if (groupCheck.rowCount) {
+        const role = await groupRole(options.db, incoming.conversationId, auth.sub);
+        if (!role) return;
+      }
+      await options.presence.setTyping(
+        incoming.conversationId,
+        auth.deviceId,
+        !!typing.isTyping,
+      );
+    }
+    if (typing.targetDeviceId) {
+      await options.router.route(typing.targetDeviceId, envelope(incoming));
+    }
+  }
+
+  async function handlePresence(incoming: Envelope): Promise<void> {
+    const presence = PresenceCodec.decode(incoming.payload ?? new Uint8Array());
+    if (presence.targetDeviceId && !isValidUUID(presence.targetDeviceId)) return;
+    if (presence.targetDeviceId) {
+      await options.router.route(presence.targetDeviceId, envelope(incoming));
+    }
   }
 }

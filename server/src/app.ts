@@ -39,7 +39,16 @@ const device = z.object({
 const profile = z
   .object({
     displayName: z.string().trim().min(1).max(80).optional(),
-    avatarUrl: z.string().url().max(500).nullable().optional(),
+    avatarUrl: z
+      .string()
+      .url()
+      .max(500)
+      .refine(
+        (url) => url.startsWith('https://') || url.startsWith('http://'),
+        { message: 'L’URL de l’avatar doit débuter par http:// ou https://' },
+      )
+      .nullable()
+      .optional(),
   })
   .refine((v) => v.displayName !== undefined || v.avatarUrl !== undefined);
 const tokenBody = z.object({ token: z.string().min(20) });
@@ -62,6 +71,7 @@ export async function buildApp(options: AppOptions = {}): Promise<FastifyInstanc
   const db = options.db ?? defaultPool;
   const email = options.emailSender ?? createEmailSender(cfg);
   const metrics = options.metrics ?? new Metrics();
+  const DUMMY_HASH = await hashPassword('dummy-constant-time-password-hash');
   const app = Fastify({
     logger: { redact: ['req.headers.authorization', 'body.password', 'body.token'] },
   });
@@ -71,6 +81,8 @@ export async function buildApp(options: AppOptions = {}): Promise<FastifyInstanc
     reply.header('X-Frame-Options', 'DENY');
     reply.header('Referrer-Policy', 'no-referrer');
     reply.header('Permissions-Policy', 'camera=(), microphone=(), geolocation=()');
+    reply.header('Strict-Transport-Security', 'max-age=31536000; includeSubDomains; preload');
+    reply.header('Content-Security-Policy', "default-src 'none'; frame-ancestors 'none';");
   });
   await app.register(rateLimit, { max: 100, timeWindow: '1 minute' });
   await app.register(jwt, { secret: cfg.JWT_SECRET });
@@ -204,19 +216,36 @@ export async function buildApp(options: AppOptions = {}): Promise<FastifyInstanc
       }
     },
   );
-  app.post('/auth/verify-email', async (request, reply) => {
-    const parsed = tokenBody.safeParse(request.body);
-    if (!parsed.success) return bad(reply, 'Jeton invalide');
-    const result = await db.query(
-      'UPDATE email_verification_tokens SET used_at=now() WHERE token_hash=$1 AND used_at IS NULL AND expires_at>now() RETURNING user_id',
-      [hashToken(parsed.data.token)],
-    );
-    if (!result.rowCount) return reply.code(400).send({ error: 'Jeton invalide ou expiré' });
-    await db.query('UPDATE users SET email_verified_at=now(), updated_at=now() WHERE id=$1', [
-      result.rows[0].user_id,
-    ]);
-    return { message: 'Adresse e-mail vérifiée' };
-  });
+  app.post(
+    '/auth/verify-email',
+    { config: { rateLimit: { max: 10, timeWindow: '15 minutes' } } },
+    async (request, reply) => {
+      const parsed = tokenBody.safeParse(request.body);
+      if (!parsed.success) return bad(reply, 'Jeton invalide');
+      const client = await db.connect();
+      try {
+        await client.query('BEGIN');
+        const result = await client.query(
+          'UPDATE email_verification_tokens SET used_at=now() WHERE token_hash=$1 AND used_at IS NULL AND expires_at>now() RETURNING user_id',
+          [hashToken(parsed.data.token)],
+        );
+        if (!result.rowCount) {
+          await client.query('ROLLBACK');
+          return reply.code(400).send({ error: 'Jeton invalide ou expiré' });
+        }
+        await client.query('UPDATE users SET email_verified_at=now(), updated_at=now() WHERE id=$1', [
+          result.rows[0].user_id,
+        ]);
+        await client.query('COMMIT');
+        return { message: 'Adresse e-mail vérifiée' };
+      } catch (err) {
+        await client.query('ROLLBACK');
+        throw err;
+      } finally {
+        client.release();
+      }
+    },
+  );
   app.post(
     '/auth/login',
     { config: { rateLimit: { max: 10, timeWindow: '15 minutes' } } },
@@ -228,11 +257,25 @@ export async function buildApp(options: AppOptions = {}): Promise<FastifyInstanc
         'SELECT id,password_hash,email_verified_at FROM users WHERE email=$1',
         [d.email],
       );
-      if (!result.rowCount || !(await verifyPassword(result.rows[0].password_hash, d.password)))
+      const user = result.rows[0];
+      const validPassword = await verifyPassword(
+        user ? user.password_hash : DUMMY_HASH,
+        d.password,
+      );
+      if (!user || !validPassword)
         return reply.code(401).send({ error: 'Identifiants invalides' });
-      if (!result.rows[0].email_verified_at)
+      if (!user.email_verified_at)
         return reply.code(403).send({ error: 'Adresse e-mail non vérifiée' });
-      const userId = result.rows[0].id;
+      const userId = user.id;
+
+      // Prevent device hijacking
+      const existingDevice = await db.query('SELECT user_id FROM devices WHERE id=$1', [
+        d.deviceId,
+      ]);
+      if (existingDevice.rowCount && existingDevice.rows[0].user_id !== userId) {
+        return reply.code(403).send({ error: 'Cet appareil est déjà associé à un autre compte' });
+      }
+
       await db.query(
         'INSERT INTO devices (id,user_id,name) VALUES ($1,$2,$3) ON CONFLICT (id) DO UPDATE SET last_seen_at=now(),name=EXCLUDED.name',
         [d.deviceId, userId, d.deviceName ?? null],
@@ -249,39 +292,72 @@ export async function buildApp(options: AppOptions = {}): Promise<FastifyInstanc
       };
     },
   );
-  app.post('/auth/refresh', async (request, reply) => {
-    const parsed = tokenBody
-      .merge(z.object({ deviceId: z.string().uuid() }))
-      .safeParse(request.body);
-    if (!parsed.success) return bad(reply, 'Jeton invalide');
-    const old = parsed.data;
-    const found = await db.query(
-      'SELECT id,user_id FROM sessions WHERE refresh_token_hash=$1 AND device_id=$2 AND revoked_at IS NULL AND expires_at>now()',
-      [hashToken(old.token), old.deviceId],
-    );
-    if (!found.rowCount) return reply.code(401).send({ error: 'Jeton invalide ou expiré' });
-    const raw = randomToken();
-    await db.query('UPDATE sessions SET revoked_at=now() WHERE id=$1', [found.rows[0].id]);
-    await db.query(
-      'INSERT INTO sessions (id,user_id,device_id,refresh_token_hash,expires_at) VALUES ($1,$2,$3,$4,$5)',
-      [randomUUID(), found.rows[0].user_id, old.deviceId, hashToken(raw), refreshExpiry(cfg)],
-    );
-    return {
-      accessToken: await accessToken(app, found.rows[0].user_id, old.deviceId),
-      refreshToken: raw,
-    };
-  });
-  app.post('/auth/logout', async (request, reply) => {
-    const parsed = tokenBody
-      .merge(z.object({ deviceId: z.string().uuid() }))
-      .safeParse(request.body);
-    if (!parsed.success) return bad(reply, 'Jeton invalide');
-    await db.query(
-      'UPDATE sessions SET revoked_at=now() WHERE refresh_token_hash=$1 AND device_id=$2',
-      [hashToken(parsed.data.token), parsed.data.deviceId],
-    );
-    return reply.code(204).send();
-  });
+  app.post(
+    '/auth/refresh',
+    { config: { rateLimit: { max: 30, timeWindow: '15 minutes' } } },
+    async (request, reply) => {
+      const parsed = tokenBody
+        .merge(z.object({ deviceId: z.string().uuid() }))
+        .safeParse(request.body);
+      if (!parsed.success) return bad(reply, 'Jeton invalide');
+      const old = parsed.data;
+      const tokenH = hashToken(old.token);
+
+      const client = await db.connect();
+      try {
+        await client.query('BEGIN');
+        const found = await client.query(
+          'SELECT id,user_id FROM sessions WHERE refresh_token_hash=$1 AND device_id=$2 AND revoked_at IS NULL AND expires_at>now() FOR UPDATE',
+          [tokenH, old.deviceId],
+        );
+        if (!found.rowCount) {
+          // Detect refresh token replay / theft
+          const alreadyRevoked = await client.query(
+            'SELECT id FROM sessions WHERE refresh_token_hash=$1 AND device_id=$2 AND revoked_at IS NOT NULL',
+            [tokenH, old.deviceId],
+          );
+          if (alreadyRevoked.rowCount) {
+            await client.query('UPDATE sessions SET revoked_at=now() WHERE device_id=$1', [
+              old.deviceId,
+            ]);
+          }
+          await client.query('COMMIT');
+          return reply.code(401).send({ error: 'Jeton invalide ou expiré' });
+        }
+        const raw = randomToken();
+        await client.query('UPDATE sessions SET revoked_at=now() WHERE id=$1', [found.rows[0].id]);
+        await client.query(
+          'INSERT INTO sessions (id,user_id,device_id,refresh_token_hash,expires_at) VALUES ($1,$2,$3,$4,$5)',
+          [randomUUID(), found.rows[0].user_id, old.deviceId, hashToken(raw), refreshExpiry(cfg)],
+        );
+        await client.query('COMMIT');
+        return {
+          accessToken: await accessToken(app, found.rows[0].user_id, old.deviceId),
+          refreshToken: raw,
+        };
+      } catch (err) {
+        await client.query('ROLLBACK');
+        throw err;
+      } finally {
+        client.release();
+      }
+    },
+  );
+  app.post(
+    '/auth/logout',
+    { config: { rateLimit: { max: 30, timeWindow: '15 minutes' } } },
+    async (request, reply) => {
+      const parsed = tokenBody
+        .merge(z.object({ deviceId: z.string().uuid() }))
+        .safeParse(request.body);
+      if (!parsed.success) return bad(reply, 'Jeton invalide');
+      await db.query(
+        'UPDATE sessions SET revoked_at=now() WHERE refresh_token_hash=$1 AND device_id=$2',
+        [hashToken(parsed.data.token), parsed.data.deviceId],
+      );
+      return reply.code(204).send();
+    },
+  );
   app.post(
     '/auth/password-reset/request',
     { config: { rateLimit: { max: 5, timeWindow: '15 minutes' } } },
@@ -307,25 +383,42 @@ export async function buildApp(options: AppOptions = {}): Promise<FastifyInstanc
       return { message: 'Si cette adresse existe, un e-mail a été envoyé' };
     },
   );
-  app.post('/auth/password-reset/confirm', async (request, reply) => {
-    const parsed = tokenBody
-      .merge(z.object({ password: z.string().min(12).max(128) }))
-      .safeParse(request.body);
-    if (!parsed.success) return bad(reply, 'Données invalides');
-    const found = await db.query(
-      'UPDATE password_reset_tokens SET used_at=now() WHERE token_hash=$1 AND used_at IS NULL AND expires_at>now() RETURNING user_id',
-      [hashToken(parsed.data.token)],
-    );
-    if (!found.rowCount) return reply.code(400).send({ error: 'Jeton invalide ou expiré' });
-    await db.query('UPDATE users SET password_hash=$1,updated_at=now() WHERE id=$2', [
-      await hashPassword(parsed.data.password),
-      found.rows[0].user_id,
-    ]);
-    await db.query('UPDATE sessions SET revoked_at=now() WHERE user_id=$1', [
-      found.rows[0].user_id,
-    ]);
-    return { message: 'Mot de passe modifié' };
-  });
+  app.post(
+    '/auth/password-reset/confirm',
+    { config: { rateLimit: { max: 5, timeWindow: '15 minutes' } } },
+    async (request, reply) => {
+      const parsed = tokenBody
+        .merge(z.object({ password: z.string().min(12).max(128) }))
+        .safeParse(request.body);
+      if (!parsed.success) return bad(reply, 'Données invalides');
+      const client = await db.connect();
+      try {
+        await client.query('BEGIN');
+        const found = await client.query(
+          'UPDATE password_reset_tokens SET used_at=now() WHERE token_hash=$1 AND used_at IS NULL AND expires_at>now() RETURNING user_id',
+          [hashToken(parsed.data.token)],
+        );
+        if (!found.rowCount) {
+          await client.query('ROLLBACK');
+          return reply.code(400).send({ error: 'Jeton invalide ou expiré' });
+        }
+        await client.query('UPDATE users SET password_hash=$1,updated_at=now() WHERE id=$2', [
+          await hashPassword(parsed.data.password),
+          found.rows[0].user_id,
+        ]);
+        await client.query('UPDATE sessions SET revoked_at=now() WHERE user_id=$1', [
+          found.rows[0].user_id,
+        ]);
+        await client.query('COMMIT');
+        return { message: 'Mot de passe modifié' };
+      } catch (err) {
+        await client.query('ROLLBACK');
+        throw err;
+      } finally {
+        client.release();
+      }
+    },
+  );
   app.get('/profile', { preHandler: app.authenticate }, async (request, reply) => {
     const { userId } = await auth(request);
     const result = await db.query(
@@ -340,9 +433,22 @@ export async function buildApp(options: AppOptions = {}): Promise<FastifyInstanc
     if (!parsed.success) return bad(reply, 'Profil invalide');
     const { userId } = await auth(request);
     const p = parsed.data;
+    const updates: string[] = [];
+    const values: (string | null)[] = [];
+    let idx = 1;
+    if (p.displayName !== undefined) {
+      updates.push(`display_name=$${idx++}`);
+      values.push(p.displayName);
+    }
+    if (p.avatarUrl !== undefined) {
+      updates.push(`avatar_url=$${idx++}`);
+      values.push(p.avatarUrl);
+    }
+    updates.push('updated_at=now()');
+    values.push(userId);
     const result = await db.query(
-      'UPDATE users SET display_name=COALESCE($1,display_name),avatar_url=COALESCE($2,avatar_url),updated_at=now() WHERE id=$3 RETURNING id,email,display_name AS "displayName",avatar_url AS "avatarUrl"',
-      [p.displayName ?? null, p.avatarUrl ?? null, userId],
+      `UPDATE users SET ${updates.join(', ')} WHERE id=$${idx} RETURNING id,email,display_name AS "displayName",avatar_url AS "avatarUrl"`,
+      values,
     );
     return result.rows[0];
   });
@@ -384,7 +490,10 @@ export async function buildApp(options: AppOptions = {}): Promise<FastifyInstanc
       if (!parsed.success) return bad(reply, 'Métadonnées média invalides');
       const { userId } = await auth(request);
       const data = parsed.data;
-      if (!(await conversationAccess(data.conversationId, userId)))
+      const groupCheck = await db.query('SELECT 1 FROM conversations WHERE id=$1', [
+        data.conversationId,
+      ]);
+      if (groupCheck.rowCount && !(await conversationAccess(data.conversationId, userId)))
         return reply.code(403).send({ error: 'Accès refusé' });
       const maxBytes =
         data.kind === 'photo' ? cfg.MEDIA_PHOTO_MAX_BYTES : cfg.MEDIA_VIDEO_MAX_BYTES;
@@ -440,9 +549,16 @@ export async function buildApp(options: AppOptions = {}): Promise<FastifyInstanc
     const found = await db.query(
       `SELECT m.object_key FROM media m
        WHERE m.id=$1 AND m.expires_at>now()
-       AND EXISTS (
-         SELECT 1 FROM conversation_members cm
-         WHERE cm.conversation_id=m.conversation_id AND cm.user_id=$2
+       AND (
+         m.owner_user_id=$2
+         OR EXISTS (
+           SELECT 1 FROM conversation_members cm
+           WHERE cm.conversation_id=m.conversation_id AND cm.user_id=$2
+         )
+         OR EXISTS (
+           SELECT 1 FROM mailbox mb
+           WHERE mb.conversation_id=m.conversation_id AND (mb.recipient_user_id=$2 OR mb.sender_user_id=$2)
+         )
        )`,
       [params.data.mediaId, userId],
     );
@@ -556,10 +672,14 @@ export async function buildApp(options: AppOptions = {}): Promise<FastifyInstanc
       } catch (error) {
         return groupError(reply, error);
       }
+      const existing = await groupRole(db, params.data.conversationId, parsed.data.userId);
+      if (existing) return reply.code(409).send({ error: 'Ce membre fait déjà partie du groupe' });
+
+      const userExists = await db.query('SELECT 1 FROM users WHERE id=$1', [parsed.data.userId]);
+      if (!userExists.rowCount) return reply.code(404).send({ error: 'Utilisateur introuvable' });
+
       await db.query(
-        `INSERT INTO conversation_members (conversation_id,user_id,role)
-       SELECT $1,$2,'member' WHERE EXISTS (SELECT 1 FROM users WHERE id=$2)
-       ON CONFLICT DO NOTHING`,
+        "INSERT INTO conversation_members (conversation_id,user_id,role) VALUES ($1,$2,'member') ON CONFLICT DO NOTHING",
         [params.data.conversationId, parsed.data.userId],
       );
       await broadcastSystemEvent(
@@ -587,6 +707,11 @@ export async function buildApp(options: AppOptions = {}): Promise<FastifyInstanc
       } catch (error) {
         return groupError(reply, error);
       }
+      const targetRole = await groupRole(db, params.data.conversationId, params.data.userId);
+      if (!targetRole) return reply.code(404).send({ error: 'Membre introuvable' });
+      if (targetRole === 'admin')
+        return reply.code(403).send({ error: 'Impossible de retirer un administrateur' });
+
       await db.query(
         'DELETE FROM conversation_members WHERE conversation_id=$1 AND user_id=$2 AND role<>$3',
         [params.data.conversationId, params.data.userId, 'admin'],
@@ -610,19 +735,47 @@ export async function buildApp(options: AppOptions = {}): Promise<FastifyInstanc
       const params = groupId.safeParse(request.params);
       if (!params.success) return bad(reply, 'Groupe invalide');
       const { userId } = await auth(request);
-      await db.query('DELETE FROM conversation_members WHERE conversation_id=$1 AND user_id=$2', [
-        params.data.conversationId,
-        userId,
-      ]);
-      await broadcastSystemEvent(
-        db,
-        groupMailbox,
-        groupRouter,
-        params.data.conversationId,
-        userId,
-        'Un membre a quitté le groupe',
-      );
-      return reply.code(204).send();
+      const role = await groupRole(db, params.data.conversationId, userId);
+      if (!role) return reply.code(403).send({ error: 'Vous ne faites pas partie de ce groupe' });
+
+      const client = await db.connect();
+      try {
+        await client.query('BEGIN');
+        await client.query('DELETE FROM conversation_members WHERE conversation_id=$1 AND user_id=$2', [
+          params.data.conversationId,
+          userId,
+        ]);
+        await groupMailbox.purgeConversation(userId, params.data.conversationId);
+
+        const remaining = await client.query<{ id: string; role: string }>(
+          'SELECT user_id AS id, role FROM conversation_members WHERE conversation_id=$1 ORDER BY joined_at ASC',
+          [params.data.conversationId],
+        );
+        if (remaining.rowCount === 0) {
+          await client.query('DELETE FROM conversations WHERE id=$1', [params.data.conversationId]);
+        } else if (role === 'admin' && !remaining.rows.some((r) => r.role === 'admin')) {
+          await client.query(
+            "UPDATE conversation_members SET role='admin' WHERE conversation_id=$1 AND user_id=$2",
+            [params.data.conversationId, remaining.rows[0].id],
+          );
+        }
+        await client.query('COMMIT');
+
+        await broadcastSystemEvent(
+          db,
+          groupMailbox,
+          groupRouter,
+          params.data.conversationId,
+          userId,
+          'Un membre a quitté le groupe',
+        );
+        return reply.code(204).send();
+      } catch (err) {
+        await client.query('ROLLBACK');
+        throw err;
+      } finally {
+        client.release();
+      }
     },
   );
   app.post(
@@ -638,6 +791,10 @@ export async function buildApp(options: AppOptions = {}): Promise<FastifyInstanc
       } catch (error) {
         return groupError(reply, error);
       }
+      const targetRole = await groupRole(db, params.data.conversationId, parsed.data.userId);
+      if (!targetRole) return reply.code(404).send({ error: 'Membre introuvable dans le groupe' });
+      if (targetRole === 'admin') return reply.code(204).send();
+
       await db.query(
         "UPDATE conversation_members SET role='admin' WHERE conversation_id=$1 AND user_id=$2",
         [params.data.conversationId, parsed.data.userId],

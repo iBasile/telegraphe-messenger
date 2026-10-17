@@ -13,6 +13,20 @@ struct ConversationView: View {
 
     var body: some View {
         VStack(spacing: 0) {
+            HStack(spacing: 10) {
+                AvatarView(name: conversation.title, size: .small, isOnline: !conversation.isGroup)
+                VStack(alignment: .leading, spacing: 2) {
+                    Text(conversation.title).font(.subheadline.weight(.semibold))
+                    Text(conversation.isGroup ? "Groupe" : "En ligne")
+                        .font(.caption).foregroundStyle(TelegrapheTheme.secondaryText)
+                }
+                Spacer()
+                Image(systemName: "video").foregroundStyle(TelegrapheTheme.accent)
+                Image(systemName: "phone").foregroundStyle(TelegrapheTheme.accent)
+            }
+            .padding(.horizontal, TelegrapheTheme.spaceL)
+            .padding(.vertical, 10)
+            .background(TelegrapheTheme.elevatedSurface)
             ScrollViewReader { proxy in
                 ScrollView {
                     LazyVStack(spacing: TelegrapheTheme.spaceS) {
@@ -51,7 +65,7 @@ struct ConversationView: View {
             .background(TelegrapheTheme.surface)
         }
         .background(TelegrapheTheme.background)
-        .navigationTitle(conversation.title)
+        .navigationTitle("")
         .navigationBarTitleDisplayMode(.inline)
     }
 }

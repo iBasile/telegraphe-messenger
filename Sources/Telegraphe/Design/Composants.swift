@@ -115,9 +115,16 @@ struct MessageBubble: View {
                     .font(.body)
                     .foregroundStyle(isMine ? TelegrapheTheme.onAccent : TelegrapheTheme.primaryText)
                     .padding(.horizontal, TelegrapheTheme.spaceL)
-                    .padding(.vertical, TelegrapheTheme.spaceM)
-                    .background(isMine ? TelegrapheTheme.accentDeep : TelegrapheTheme.surface,
-                                in: RoundedRectangle(cornerRadius: TelegrapheTheme.radiusL))
+                    .padding(.vertical, 10)
+                    .background {
+                        UnevenRoundedRectangle(
+                            topLeadingRadius: 18,
+                            bottomLeadingRadius: isMine ? 18 : 4,
+                            bottomTrailingRadius: isMine ? 4 : 18,
+                            topTrailingRadius: 18
+                        )
+                        .fill(isMine ? TelegrapheTheme.accent : TelegrapheTheme.receivedBubble)
+                    }
                 HStack(spacing: TelegrapheTheme.spaceXS) {
                     Text("12:40").font(.caption2).foregroundStyle(TelegrapheTheme.secondaryText)
                     if isMine { MessageStatusIcon(status: message.status) }

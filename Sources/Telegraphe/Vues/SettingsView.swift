@@ -5,61 +5,57 @@ struct SettingsView: View {
     @State var appearance = "Automatique"
     @State var showingProfile = false
     @State var showingLogoutConfirmation = false
+    @State var showingAbout = false
 
     var body: some View {
         NavigationStack {
-            ScrollView {
-                VStack(alignment: .leading, spacing: TelegrapheTheme.spaceL) {
-                    Text("Réglages").font(.largeTitle.weight(.bold)).foregroundStyle(TelegrapheTheme.primaryText)
+            Form {
+                Section {
                     Button { showingProfile = true } label: {
-                        HStack(spacing: TelegrapheTheme.spaceM) {
+                        HStack(spacing: 14) {
                             AvatarView(name: "Mon profil", size: .large)
-                            VStack(alignment: .leading, spacing: TelegrapheTheme.spaceXS) {
-                                Text("Mon profil").font(.headline.weight(.semibold))
-                                Text("Modifier mon profil").foregroundStyle(TelegrapheTheme.secondaryText)
+                            VStack(alignment: .leading, spacing: 3) {
+                                Text("Mon profil").font(.headline)
+                                Text("Modifier mon profil").font(.subheadline).foregroundStyle(TelegrapheTheme.secondaryText)
                             }
                             Spacer()
-                            Image(systemName: "chevron.right").foregroundStyle(TelegrapheTheme.secondaryText)
                         }
-                        .padding(TelegrapheTheme.spaceL)
-                        .background(TelegrapheTheme.surface, in: RoundedRectangle(cornerRadius: 24))
-                    }.buttonStyle(.plain)
-                    SectionHeader(title: "Préférences")
-                    settingsCard {
-                        SettingsRow(title: "Notifications", symbol: "bell.fill")
-                        Divider()
-                        SettingsRow(title: "Apparence", symbol: "paintbrush.fill", tint: TelegrapheTheme.avatarPalette[2])
+                        .padding(.vertical, 4)
                     }
-                    SectionHeader(title: "Confidentialité")
-                    settingsCard {
-                        SettingsRow(title: "Confidentialité", symbol: "lock.fill", tint: TelegrapheTheme.avatarPalette[3])
-                        Divider()
-                        SettingsRow(title: "Stockage et données", symbol: "externaldrive.fill", tint: TelegrapheTheme.avatarPalette[4])
-                    }
-                    settingsCard { SettingsRow(title: "À propos de Telegraphe", symbol: "info.circle.fill", tint: TelegrapheTheme.secondaryText) }
-                    Button { showingLogoutConfirmation = true } label: {
-                        SettingsRow(title: "Se déconnecter", symbol: "rectangle.portrait.and.arrow.right", tint: TelegrapheTheme.danger, textTint: TelegrapheTheme.danger)
-                    }.buttonStyle(.plain).foregroundStyle(TelegrapheTheme.danger)
-                    Text("Telegraphe • Version 1.0").font(.footnote).foregroundStyle(TelegrapheTheme.secondaryText)
-                        .frame(maxWidth: .infinity).padding(.top, TelegrapheTheme.spaceS)
                 }
-                .padding(.horizontal, TelegrapheTheme.spaceL)
-                .padding(.vertical, TelegrapheTheme.spaceL)
+                Section("Préférences") {
+                    Label("Notifications", systemImage: "bell.fill")
+                    Label("Apparence", systemImage: "paintbrush.fill")
+                }
+                Section("Confidentialité") {
+                    Label("Confidentialité", systemImage: "lock.fill")
+                    Label("Stockage et données", systemImage: "externaldrive.fill")
+                }
+                Section {
+                    Button {
+                        showingAbout = true
+                    } label: {
+                        Label("À propos de Telegraphe", systemImage: "info.circle.fill")
+                    }
+                    Text("Version Bêta 0.0").font(.footnote).foregroundStyle(TelegrapheTheme.secondaryText)
+                }
+                Section {
+                    Button("Se déconnecter", role: .destructive) { showingLogoutConfirmation = true }
+                }
             }
+            .scrollContentBackground(.hidden)
             .background(TelegrapheTheme.background)
+            .tint(TelegrapheTheme.accent)
+            .navigationTitle("Réglages")
             .sheet(isPresented: $showingProfile) { ProfileView() }
+            .sheet(isPresented: $showingAbout) {
+                            AboutView()
+                        }
             .confirmationDialog("Se déconnecter ?", isPresented: $showingLogoutConfirmation) {
                 Button("Se déconnecter", role: .destructive) { Task { await viewModel.logout() } }
                 Button("Annuler", role: .cancel) { }
             }
         }
-    }
-
-    @ViewBuilder func settingsCard<Content: View>(@ViewBuilder content: () -> Content) -> some View {
-        VStack(spacing: TelegrapheTheme.spaceS) { content() }
-            .padding(.horizontal, TelegrapheTheme.spaceL)
-            .padding(.vertical, TelegrapheTheme.spaceS)
-            .background(TelegrapheTheme.surface, in: RoundedRectangle(cornerRadius: 24))
     }
 }
 
@@ -78,5 +74,46 @@ struct ProfileView: View {
             .navigationTitle("Mon profil")
             .toolbar { ToolbarItem { Button("Fermer") { dismiss() } } }
         }
+    }
+}
+
+struct AboutView: View {
+    @Environment(\.dismiss) var dismiss
+
+    var body: some View {
+        NavigationStack {
+            VStack(spacing: 12) {
+                Image(systemName: "bubble.left.and.bubble.right.fill")
+                    .font(.largeTitle)
+                    .foregroundStyle(TelegrapheTheme.accent)
+                Text("Telegraphe")
+                    .font(.title2.weight(.semibold))
+                Text("Télégraphe est une application de messagerie instantanée qui respecte la vie privée.")
+                    .font(.subheadline)
+                    .foregroundStyle(.secondary)
+                    .multilineTextAlignment(.center)
+                Text("Développement : Basile BARGIBANT")
+                    .font(.subheadline)
+                    .foregroundStyle(.secondary)
+                Text("Hébergement : Basile GUERMONPREZ")
+                    .font(.subheadline)
+                    .foregroundStyle(.secondary)
+                Text("Télégraphe fonctionne avec plusieurs librairies open-source. [En savoir plus...](https://double-b-studio.web.app/telegraphe/acknowledgements.html)")
+                    .font(.caption)
+                    .foregroundStyle(.secondary)
+                    .multilineTextAlignment(.center)
+            }
+            .padding()
+            .navigationTitle("À propos")
+            .navigationBarTitleDisplayMode(.inline)
+            .toolbar {
+                ToolbarItem(placement: .confirmationAction) {
+                    Button("Terminé") {
+                        dismiss()
+                    }
+                }
+            }
+        }
+        .presentationDetents([.medium])
     }
 }

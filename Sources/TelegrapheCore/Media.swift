@@ -98,12 +98,18 @@ public actor MediaCache {
         self.byteLimit = byteLimit
     }
 
+    private func isValidMediaID(_ mediaID: String) -> Bool {
+        !mediaID.isEmpty && mediaID.allSatisfy { $0.isLetter || $0.isNumber || $0 == "-" || $0 == "_" }
+    }
+
     public func cachedURL(for mediaID: String) -> URL? {
+        guard isValidMediaID(mediaID) else { return nil }
         let url = directory.appendingPathComponent(mediaID)
         return FileManager.default.fileExists(atPath: url.path) ? url : nil
     }
 
     public func store(_ source: URL, mediaID: String) throws -> URL {
+        guard isValidMediaID(mediaID) else { throw MediaError.unsupportedFormat }
         try FileManager.default.createDirectory(at: directory, withIntermediateDirectories: true)
         let destination = directory.appendingPathComponent(mediaID)
         if destination != source {

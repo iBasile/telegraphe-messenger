@@ -2,25 +2,26 @@ import SwiftUI
 
 enum TelegrapheTheme {
     static let accent = Color.orange
-    static let accentDeep = Color(red: 0.76, green: 0.25, blue: 0.05)
+    static let accentDeep = accent
     static let onAccent = Color.white
-    static let shadow = Color.black.opacity(0.12)
-    static let accentSoft = Color(red: 1.0, green: 0.55, blue: 0.14).opacity(0.16)
-    static let background = Color(red: 0.98, green: 0.96, blue: 0.92)
-    static let surface = Color(red: 1.0, green: 0.99, blue: 0.97)
-    static let elevatedSurface = Color.white
-    static let primaryText = Color(red: 0.15, green: 0.10, blue: 0.07)
-    static let secondaryText = Color(red: 0.40, green: 0.34, blue: 0.30)
-    static let separator = Color(red: 0.82, green: 0.75, blue: 0.68).opacity(0.45)
-    static let success = Color(red: 0.18, green: 0.48, blue: 0.25)
-    static let danger = Color(red: 0.75, green: 0.12, blue: 0.10)
+    static let shadow = Color.black.opacity(0.08)
+    static let accentSoft = accent.opacity(0.16)
+    static let background = Color.primary.opacity(0.015)
+    static let surface = Color.primary.opacity(0.055)
+    static let elevatedSurface = Color.primary.opacity(0.045)
+    static let primaryText = Color.primary
+    static let secondaryText = Color.secondary
+    static let separator = Color.primary.opacity(0.12)
+    static let success = Color.green
+    static let danger = Color.red
+    static let receivedBubble = Color.primary.opacity(0.08)
     static let avatarPalette = [
-        Color(red: 0.95, green: 0.38, blue: 0.16),
-        Color(red: 0.95, green: 0.62, blue: 0.12),
-        Color(red: 0.89, green: 0.39, blue: 0.29),
-        Color(red: 0.68, green: 0.30, blue: 0.20),
-        Color(red: 0.78, green: 0.60, blue: 0.39),
-        Color(red: 0.85, green: 0.48, blue: 0.52)
+        accent.opacity(0.16),
+        Color.teal.opacity(0.14),
+        Color.pink.opacity(0.15),
+        Color.blue.opacity(0.15),
+        Color.purple.opacity(0.15),
+        Color.yellow.opacity(0.18)
     ]
     static let spaceXS: CGFloat = 4
     static let spaceS: CGFloat = 8
@@ -38,8 +39,8 @@ struct PrimaryButton: ButtonStyle {
         configuration.label
             .font(.headline)
             .foregroundStyle(TelegrapheTheme.onAccent)
-            .frame(maxWidth: .infinity, minHeight: 48)
-            .background(TelegrapheTheme.accentDeep, in: RoundedRectangle(cornerRadius: TelegrapheTheme.radiusM))
+            .frame(maxWidth: .infinity, minHeight: 56)
+            .background(TelegrapheTheme.accent, in: RoundedRectangle(cornerRadius: TelegrapheTheme.radiusL))
             .opacity(configuration.isPressed ? 0.78 : 1)
             .animation(.easeOut(duration: 0.15), value: configuration.isPressed)
     }
@@ -61,8 +62,7 @@ struct RoundedFieldStyle: ViewModifier {
         content
             .padding(.horizontal, TelegrapheTheme.spaceL)
             .frame(minHeight: 48)
-            .background(TelegrapheTheme.surface, in: RoundedRectangle(cornerRadius: TelegrapheTheme.radiusM))
-            .overlay(RoundedRectangle(cornerRadius: TelegrapheTheme.radiusM).stroke(TelegrapheTheme.separator, lineWidth: 1))
+            .background(TelegrapheTheme.surface, in: RoundedRectangle(cornerRadius: 15))
     }
 }
 

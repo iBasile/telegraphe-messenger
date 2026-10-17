@@ -1,6 +1,22 @@
 {
   "sourceLanguage" : "en",
   "strings" : {
+    "" : {
+
+    },
+    "%@, %@" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "new",
+            "value" : "%1$@, %2$@"
+          }
+        }
+      }
+    },
+    "%lld" : {
+
+    },
     "%lld Items" : {
       "comment" : "Header title for a list that contains the number of items",
       "extractionState" : "stale",
@@ -30,6 +46,18 @@
           }
         }
       }
+    },
+    "%lld messages non lus" : {
+
+    },
+    "12:40" : {
+
+    },
+    "À propos" : {
+
+    },
+    "À propos de Telegraphe" : {
+
     },
     "Add" : {
       "comment" : "Button in items list that will cause a new item to be added",
@@ -61,6 +89,21 @@
         }
       }
     },
+    "Administration" : {
+
+    },
+    "Ajouter un membre" : {
+
+    },
+    "Ajouter une photo ou une vidéo" : {
+
+    },
+    "Annuler" : {
+
+    },
+    "Apparence" : {
+
+    },
     "Appearance" : {
       "comment" : "Settings select label for the interface style of the controls (light, dark, or default)",
       "extractionState" : "stale",
@@ -91,6 +134,9 @@
         }
       }
     },
+    "Appels" : {
+
+    },
     "Aucune conversation" : {
       "extractionState" : "stale",
       "localizations" : {
@@ -102,6 +148,9 @@
         }
       }
     },
+    "Avatar de %@" : {
+
+    },
     "Base locale" : {
       "extractionState" : "stale",
       "localizations" : {
@@ -112,6 +161,12 @@
           }
         }
       }
+    },
+    "Base locale indisponible" : {
+
+    },
+    "Bienvenue sur Telegraphe !" : {
+
     },
     "Cancel" : {
       "comment" : "Button title indicating that the operation should be cancelled",
@@ -143,6 +198,15 @@
         }
       }
     },
+    "Collez le token reçu dans le lien de vérification." : {
+
+    },
+    "Confidentialité" : {
+
+    },
+    "Connectez-vous avec votre compte Telegraphe." : {
+
+    },
     "Connexion" : {
       "extractionState" : "stale",
       "localizations" : {
@@ -153,6 +217,9 @@
           }
         }
       }
+    },
+    "Contacts" : {
+
     },
     "Conversations" : {
       "extractionState" : "stale",
@@ -165,6 +232,12 @@
         }
       }
     },
+    "Créer le compte" : {
+
+    },
+    "Créer le groupe" : {
+
+    },
     "Créer un compte" : {
       "extractionState" : "stale",
       "localizations" : {
@@ -175,6 +248,9 @@
           }
         }
       }
+    },
+    "Créez votre compte Telegraphe." : {
+
     },
     "Dark" : {
       "comment" : "Menu item indicating that the appearance should be in dark mode",
@@ -236,6 +312,24 @@
         }
       }
     },
+    "Développement : Basile BARGIBANT" : {
+
+    },
+    "Échec de l’envoi" : {
+
+    },
+    "En ligne" : {
+
+    },
+    "Envoyer le lien" : {
+
+    },
+    "Envoyer le message" : {
+
+    },
+    "Épingler" : {
+
+    },
     "Erreur" : {
       "extractionState" : "stale",
       "localizations" : {
@@ -278,7 +372,6 @@
       }
     },
     "Fermer" : {
-      "extractionState" : "stale",
       "localizations" : {
         "fr" : {
           "stringUnit" : {
@@ -287,6 +380,21 @@
           }
         }
       }
+    },
+    "Filtre des appels" : {
+
+    },
+    "Filtrer les discussions" : {
+
+    },
+    "Groupe" : {
+
+    },
+    "Groupes" : {
+
+    },
+    "Hébergement : Basile GUERMONPREZ" : {
+
     },
     "Hello [%@](https://skip.dev)!" : {
       "comment" : "Welcome tab contents",
@@ -348,6 +456,21 @@
         }
       }
     },
+    "Informations" : {
+
+    },
+    "Informations du groupe" : {
+
+    },
+    "Inviter des amis" : {
+
+    },
+    "J’ai déjà un compte" : {
+
+    },
+    "Les membres et leurs rôles sont gérés par le serveur." : {
+
+    },
     "Light" : {
       "comment" : "Menu item indicating that the appearance should be in light mode",
       "extractionState" : "stale",
@@ -377,6 +500,36 @@
           }
         }
       }
+    },
+    "Manqués" : {
+
+    },
+    "Membres" : {
+
+    },
+    "Membres séparés par des virgules" : {
+
+    },
+    "Message" : {
+
+    },
+    "Messages" : {
+
+    },
+    "Modifier la photo" : {
+
+    },
+    "Modifier le nom" : {
+
+    },
+    "Modifier mon profil" : {
+
+    },
+    "Mon profil" : {
+
+    },
+    "Mot de passe oublié ?" : {
+
     },
     "Name" : {
       "comment" : "Placeholder title for the Name field in a form",
@@ -408,6 +561,15 @@
         }
       }
     },
+    "Nom d’affichage" : {
+
+    },
+    "Nom du groupe" : {
+
+    },
+    "Non lus" : {
+
+    },
     "Notes" : {
       "comment" : "Item editor form label for the Notes field",
       "extractionState" : "stale",
@@ -438,6 +600,24 @@
         }
       }
     },
+    "Notifications" : {
+
+    },
+    "Nouveau" : {
+
+    },
+    "Nouveau groupe" : {
+
+    },
+    "Nouveau message" : {
+
+    },
+    "Nouvelle conversation" : {
+
+    },
+    "Pas encore de compte ?" : {
+
+    },
     "Powered by [Skip](https://skip.dev)" : {
       "comment" : "Link markdown text for the Powered by… label",
       "extractionState" : "stale",
@@ -467,6 +647,33 @@
           }
         }
       }
+    },
+    "Préférences" : {
+
+    },
+    "Quitter le groupe" : {
+
+    },
+    "Rechercher" : {
+
+    },
+    "Réessayer" : {
+
+    },
+    "Réglages" : {
+
+    },
+    "Rejoignez la conversation !" : {
+
+    },
+    "Restauration de la session…" : {
+
+    },
+    "Retour à la connexion" : {
+
+    },
+    "S’inscrire" : {
+
     },
     "Save" : {
       "comment" : "Button title indicating that the current contents should be saved",
@@ -499,7 +706,6 @@
       }
     },
     "Se connecter" : {
-      "extractionState" : "stale",
       "localizations" : {
         "fr" : {
           "stringUnit" : {
@@ -508,6 +714,12 @@
           }
         }
       }
+    },
+    "Se déconnecter" : {
+
+    },
+    "Se déconnecter ?" : {
+
     },
     "Settings" : {
       "comment" : "Tab bar item title for the Settings tab",
@@ -539,6 +751,21 @@
         }
       }
     },
+    "Si cette adresse existe, un e-mail a été envoyé." : {
+
+    },
+    "Silencieux" : {
+
+    },
+    "Statut du message" : {
+
+    },
+    "Stockage et données" : {
+
+    },
+    "Supprimer" : {
+
+    },
     "System" : {
       "comment" : "Menu item indicating that the appearance should be in the default system mode",
       "extractionState" : "stale",
@@ -569,6 +796,18 @@
         }
       }
     },
+    "Telegraphe" : {
+
+    },
+    "Télégraphe est une application de messagerie instantanée qui respecte la vie privée." : {
+
+    },
+    "Télégraphe fonctionne avec plusieurs librairies open-source. [En savoir plus...](https://double-b-studio.web.app/telegraphe/acknowledgements.html)" : {
+
+    },
+    "Terminé" : {
+
+    },
     "Title" : {
       "comment" : "Label for the item editor form indicating the title of the item",
       "extractionState" : "stale",
@@ -598,6 +837,15 @@
           }
         }
       }
+    },
+    "Tous" : {
+
+    },
+    "Tout" : {
+
+    },
+    "Vérifier l’adresse" : {
+
     },
     "Version %@ (%@)" : {
       "comment" : "Settings label showing the current version of the app",
@@ -634,6 +882,9 @@
           }
         }
       }
+    },
+    "Version Bêta 0.0" : {
+
     },
     "Welcome" : {
       "comment" : "Tab bar item title for the Welcome tab",

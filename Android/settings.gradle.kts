@@ -1,4 +1,4 @@
-// This gradle project is part of a conventional Skip app project.
+ // This gradle project is part of a conventional Skip app project.
 pluginManagement {
     // Initialize the Skip plugin folder and perform a pre-build for non-Xcode builds
     val pluginPath = File.createTempFile("skip-plugin-path", ".tmp")

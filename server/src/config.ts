@@ -57,5 +57,12 @@ const environment = { ...process.env };
 if (environment.NODE_ENV === 'test') {
   environment.DATABASE_URL ??= 'postgres://test:test@localhost:5432/test';
   environment.JWT_SECRET ??= 'test-only-secret-that-is-at-least-32-chars';
+} else if (environment.NODE_ENV === 'production') {
+  if (
+    environment.JWT_SECRET === 'test-only-secret-that-is-at-least-32-chars' ||
+    environment.JWT_SECRET === 'replace-with-a-strong-secret-key-at-least-32-chars'
+  ) {
+    throw new Error('JWT_SECRET ne peut pas être un secret par défaut en production');
+  }
 }
 export const config = schema.parse(environment);

@@ -69,7 +69,7 @@ export class MinioMediaStorage implements MediaStorage {
       hmac(hmac(hmac(`AWS4${this.cfg.MINIO_SECRET_KEY}`, shortDate), this.cfg.MINIO_REGION), 's3'),
       'aws4_request',
     );
-    const signed = hmac(signature, stringToSign);
+    const signed = hmac(signature, stringToSign).toString('hex');
     return `${endpoint.origin}${path}?${query}&X-Amz-Signature=${signed}`;
   }
 }

@@ -304,15 +304,25 @@ public final class LocalDatabase {
     }
 
     public func searchMessages(matching query: String) throws -> [Message] {
+        let trimmed = query.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !trimmed.isEmpty else { return [] }
         if fullTextSearchAvailable {
-            return try context.selectAll(sql: """
-            SELECT m.id,m.conversation_id,m.sender_user_id,m.text,m.timestamp,m.status
-            FROM messages_fts f JOIN messages m ON f.rowid=m.rowid WHERE f MATCH ? ORDER BY m.timestamp DESC
-            """, parameters: [.text(query)]).compactMap(Self.message)
+            let ftsQuery = sanitizeFTS5Query(trimmed)
+            if !ftsQuery.isEmpty {
+                do {
+                    return try context.selectAll(sql: """
+                    SELECT m.id,m.conversation_id,m.sender_user_id,m.text,m.timestamp,m.status
+                    FROM messages_fts f JOIN messages m ON f.rowid=m.rowid WHERE f MATCH ? ORDER BY m.timestamp DESC
+                    """, parameters: [.text(ftsQuery)]).compactMap(Self.message)
+                } catch {
+                    print("[Telegraphe][SQLite] FTS5 search failed, falling back to LIKE: \(error.localizedDescription)")
+                }
+            }
         }
+        let escaped = trimmed.replacingOccurrences(of: "%", with: "\\%").replacingOccurrences(of: "_", with: "\\_")
         return try context.selectAll(
-            sql: "SELECT id,conversation_id,sender_user_id,text,timestamp,status FROM messages WHERE text LIKE ? ORDER BY timestamp DESC",
-            parameters: [.text("%\(query)%")]
+            sql: "SELECT id,conversation_id,sender_user_id,text,timestamp,status FROM messages WHERE text LIKE ? ESCAPE '\\' ORDER BY timestamp DESC",
+            parameters: [.text("%\(escaped)%")]
         ).compactMap(Self.message)
     }
 
@@ -330,16 +340,46 @@ public final class LocalDatabase {
         }
     }
     public func searchItems(matching query: String) throws -> [DatabaseItem] {
-        let rows: [[SQLValue]]
+        let trimmed = query.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !trimmed.isEmpty else { return [] }
         if fullTextSearchAvailable {
-            rows = try context.selectAll(sql: "SELECT items.id,items.title FROM items_fts JOIN items ON items_fts.rowid=items.id WHERE items_fts MATCH ? ORDER BY items.id", parameters: [.text(query)])
-        } else {
-            rows = try context.selectAll(sql: "SELECT id,title FROM items WHERE title LIKE ? ORDER BY id", parameters: [.text("%\(query)%")])
+            let ftsQuery = sanitizeFTS5Query(trimmed)
+            if !ftsQuery.isEmpty {
+                do {
+                    return try context.selectAll(
+                        sql: "SELECT items.id,items.title FROM items_fts JOIN items ON items_fts.rowid=items.id WHERE items_fts MATCH ? ORDER BY items.id",
+                        parameters: [.text(ftsQuery)]
+                    ).compactMap { row in
+                        guard let id = row[0].longValue, let title = row[1].textValue else { return nil }
+                        return DatabaseItem(id: id, title: title)
+                    }
+                } catch {
+                    print("[Telegraphe][SQLite] FTS5 searchItems failed, falling back to LIKE: \(error.localizedDescription)")
+                }
+            }
         }
+        let escaped = trimmed.replacingOccurrences(of: "%", with: "\\%").replacingOccurrences(of: "_", with: "\\_")
+        let rows = try context.selectAll(sql: "SELECT id,title FROM items WHERE title LIKE ? ESCAPE '\\' ORDER BY id", parameters: [.text("%\(escaped)%")])
         return rows.compactMap { row in
             guard let id = row[0].longValue, let title = row[1].textValue else { return nil }
             return DatabaseItem(id: id, title: title)
         }
+    }
+
+    private func sanitizeFTS5Query(_ query: String) -> String {
+        let stripped = query
+            .replacingOccurrences(of: "\"", with: "")
+            .replacingOccurrences(of: "'", with: "")
+            .replacingOccurrences(of: "*", with: "")
+            .replacingOccurrences(of: "^", with: "")
+            .replacingOccurrences(of: ":", with: "")
+            .replacingOccurrences(of: "(", with: "")
+            .replacingOccurrences(of: ")", with: "")
+            .replacingOccurrences(of: "{", with: "")
+            .replacingOccurrences(of: "}", with: "")
+        let tokens = stripped.split(whereSeparator: { $0.isWhitespace })
+        guard !tokens.isEmpty else { return "" }
+        return tokens.map { "\"\($0)\"*" }.joined(separator: " ")
     }
 
     private static func message(_ row: [SQLValue]) -> Message? {
