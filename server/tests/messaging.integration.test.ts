@@ -67,7 +67,7 @@ describe.skipIf(!enabled)('WebSocket messaging integration', () => {
     ]);
 
     const conversationId = randomUUID();
-    const live = makeText(senderDevice, conversationId, 'live', recipientUser, recipientDevice);
+    const live = makeText(senderDevice, conversationId, 'live', recipientUser);
     const recipientMessages: Envelope[] = [];
     recipient.on('message', (data) => {
       const message = EnvelopeCodec.decode(new Uint8Array(data as Buffer));
@@ -103,7 +103,6 @@ describe.skipIf(!enabled)('WebSocket messaging integration', () => {
       conversationId,
       'offline',
       recipientUser,
-      recipientDevice,
     );
     sender.send(Buffer.from(EnvelopeCodec.encode(offline).finish()));
     const ack = await waitForType(sender, EnvelopeType.SERVER_ACK);
@@ -182,7 +181,6 @@ function makeText(
   conversationId: string,
   clientId: string,
   recipientUserId: string,
-  recipientDeviceId: string,
 ): Envelope {
   return {
     type: EnvelopeType.SEND_TEXT,
@@ -193,7 +191,6 @@ function makeText(
     encryptionVersion: 0,
     payload: TextMessageCodec.encode({
       recipientUserId,
-      recipientDeviceId,
       text: clientId,
     }).finish(),
   };

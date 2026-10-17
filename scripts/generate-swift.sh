@@ -4,4 +4,4 @@ set -eu
 ROOT=$(CDPATH= cd -- "$(dirname -- "$0")/.." && pwd)
 OUT="$ROOT/Sources/TelegrapheCore/Generated"
 mkdir -p "$OUT"
-protoc --swift_out="$OUT" "$ROOT/proto/telegraphe.proto"
+protoc --proto_path="$ROOT/proto" --swift_opt=Visibility=Public --swift_out="$OUT" "$ROOT/proto/telegraphe.proto"

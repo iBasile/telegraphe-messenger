@@ -1,4 +1,4 @@
-# ADR 005 — Groupes et fan-out
+# ADR 0005 — Groupes et fan-out
 
 ## Décision
 

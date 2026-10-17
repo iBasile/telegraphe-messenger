@@ -98,7 +98,6 @@ struct ConversationRow: View {
             }
         }
         .padding(.vertical, TelegrapheTheme.spaceS)
-        .accessibilityElement(children: .combine)
         .accessibilityLabel("\(conversation.title), \(conversation.lastMessage ?? "Aucun message")")
     }
 }
@@ -167,7 +166,7 @@ struct EmptyStateView: View {
             Image(systemName: symbol).font(.system(size: 40)).foregroundStyle(TelegrapheTheme.accent)
             Text(title).font(.title3.weight(.semibold)).foregroundStyle(TelegrapheTheme.primaryText)
             Text(message).font(.body).foregroundStyle(TelegrapheTheme.secondaryText).multilineTextAlignment(.center)
-            if let actionTitle, let action { Button(actionTitle, action: action).buttonStyle(SecondaryButton()) }
+            if let actionTitle, let action { Button(actionTitle, action: action).modifier(SecondaryButtonModifier()) }
         }
         .padding(TelegrapheTheme.spaceXL)
     }

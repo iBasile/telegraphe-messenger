@@ -3,7 +3,7 @@ import jwt from '@fastify/jwt';
 import rateLimit from '@fastify/rate-limit';
 import cors from '@fastify/cors';
 import { z } from 'zod';
-import { randomUUID } from 'node:crypto';
+import { createHash, randomUUID } from 'node:crypto';
 import type pg from 'pg';
 import { config as defaultConfig, type Config } from './config.js';
 import {
@@ -54,6 +54,15 @@ const profile = z
 const tokenBody = z.object({ token: z.string().min(20) });
 const bad = (reply: FastifyReply, message: string): FastifyReply =>
   reply.code(400).send({ error: message });
+const deterministicDirectConversationID = (firstUserID: string, secondUserID: string): string => {
+  const digest = createHash('sha256')
+    .update([firstUserID, secondUserID].sort().join(':'))
+    .digest();
+  digest[6] = (digest[6] & 0x0f) | 0x40;
+  digest[8] = (digest[8] & 0x3f) | 0x80;
+  const hex = digest.subarray(0, 16).toString('hex');
+  return `${hex.slice(0, 8)}-${hex.slice(8, 12)}-${hex.slice(12, 16)}-${hex.slice(16, 20)}-${hex.slice(20)}`;
+};
 
 export interface AppOptions {
   db?: pg.Pool;
@@ -428,6 +437,53 @@ export async function buildApp(options: AppOptions = {}): Promise<FastifyInstanc
     if (!result.rowCount) return reply.code(404).send({ error: 'Utilisateur introuvable' });
     return result.rows[0];
   });
+  app.get(
+    '/users/search',
+    {
+      preHandler: app.authenticate,
+      config: { rateLimit: { max: 20, timeWindow: '1 minute' } },
+    },
+    async (request, reply) => {
+      const parsed = z.object({ email: z.string().email() }).safeParse(request.query);
+      if (!parsed.success) return bad(reply, 'Adresse e-mail invalide');
+      const result = await db.query<{ id: string; displayName: string }>(
+        'SELECT id, display_name AS "displayName" FROM users WHERE email=$1',
+        [parsed.data.email.toLowerCase()],
+      );
+      if (!result.rowCount) return reply.code(404).send({ error: 'Utilisateur introuvable' });
+      return result.rows[0];
+    },
+  );
+  app.post(
+    '/conversations/direct',
+    { preHandler: app.authenticate },
+    async (request, reply) => {
+      const parsed = z.object({ userId: z.string().uuid() }).safeParse(request.body);
+      if (!parsed.success) return bad(reply, 'Utilisateur invalide');
+      const { userId } = await auth(request);
+      if (userId === parsed.data.userId) return bad(reply, 'Conversation invalide');
+      const users = await db.query<{ id: string; displayName: string }>(
+        'SELECT id, display_name AS "displayName" FROM users WHERE id = ANY($1::uuid[])',
+        [[userId, parsed.data.userId]],
+      );
+      if (users.rowCount !== 2) return reply.code(404).send({ error: 'Utilisateur introuvable' });
+      const conversationId = deterministicDirectConversationID(userId, parsed.data.userId);
+      const target = users.rows.find((user) => user.id === parsed.data.userId)!;
+      await db.query(
+        `INSERT INTO conversations (id,kind,name,created_by)
+         VALUES ($1,'direct',$2,$3)
+         ON CONFLICT (id) DO NOTHING`,
+        [conversationId, target.displayName, userId],
+      );
+      await db.query(
+        `INSERT INTO conversation_members (conversation_id,user_id,role)
+         VALUES ($1,$2,'member'),($1,$3,'member')
+         ON CONFLICT DO NOTHING`,
+        [conversationId, userId, parsed.data.userId],
+      );
+      return { id: conversationId, userId: parsed.data.userId, displayName: target.displayName };
+    },
+  );
   app.patch('/profile', { preHandler: app.authenticate }, async (request, reply) => {
     const parsed = profile.safeParse(request.body);
     if (!parsed.success) return bad(reply, 'Profil invalide');

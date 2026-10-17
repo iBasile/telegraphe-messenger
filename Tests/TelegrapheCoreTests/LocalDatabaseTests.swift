@@ -39,6 +39,29 @@ func cursorKeepsTheMostRecentMailboxPosition() throws {
 }
 
 @Test
+func incomingMessagesAreIdempotent() throws {
+    let database = LocalDatabase()
+    try database.migrate()
+    let first = try database.insertIncomingMessage(
+        id: "incoming",
+        conversationID: "conversation",
+        senderUserID: "other",
+        text: "Bonjour",
+        timestamp: 10
+    )
+    let duplicate = try database.insertIncomingMessage(
+        id: "incoming",
+        conversationID: "conversation",
+        senderUserID: "other",
+        text: "Bonjour",
+        timestamp: 10
+    )
+    #expect(first)
+    #expect(!duplicate)
+    #expect(try database.messages(in: "conversation").count == 1)
+}
+
+@Test
 func systemEventsAreStoredAsConversationMessages() throws {
     let database = LocalDatabase()
     try database.migrate()

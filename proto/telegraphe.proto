@@ -40,7 +40,7 @@ message HandshakeAck {
 
 message TextMessage {
   string recipient_user_id = 1;
-  string recipient_device_id = 2;
+  optional string recipient_device_id = 2 [deprecated = true];
   string text = 3;
 }
 

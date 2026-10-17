@@ -34,26 +34,23 @@ enum TelegrapheTheme {
     static let radiusL: CGFloat = 16
 }
 
-struct PrimaryButton: ButtonStyle {
-    func makeBody(configuration: Configuration) -> some View {
-        configuration.label
+struct PrimaryButtonModifier: ViewModifier {
+    func body(content: Content) -> some View {
+        content
             .font(.headline)
             .foregroundStyle(TelegrapheTheme.onAccent)
             .frame(maxWidth: .infinity, minHeight: 56)
             .background(TelegrapheTheme.accent, in: RoundedRectangle(cornerRadius: TelegrapheTheme.radiusL))
-            .opacity(configuration.isPressed ? 0.78 : 1)
-            .animation(.easeOut(duration: 0.15), value: configuration.isPressed)
     }
 }
 
-struct SecondaryButton: ButtonStyle {
-    func makeBody(configuration: Configuration) -> some View {
-        configuration.label
+struct SecondaryButtonModifier: ViewModifier {
+    func body(content: Content) -> some View {
+        content
             .font(.headline)
             .foregroundStyle(TelegrapheTheme.accentDeep)
             .frame(maxWidth: .infinity, minHeight: 44)
             .background(TelegrapheTheme.accentSoft, in: RoundedRectangle(cornerRadius: TelegrapheTheme.radiusM))
-            .opacity(configuration.isPressed ? 0.7 : 1)
     }
 }
 
@@ -68,5 +65,5 @@ struct RoundedFieldStyle: ViewModifier {
 
 extension View {
     func roundedField() -> some View { modifier(RoundedFieldStyle()) }
-    func orangeButton() -> some View { buttonStyle(PrimaryButton()) }
+    func orangeButton() -> some View { modifier(PrimaryButtonModifier()) }
 }

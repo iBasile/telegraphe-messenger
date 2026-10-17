@@ -201,6 +201,39 @@ public final class LocalDatabase {
         return Message(id: id, conversationID: conversationID, senderUserID: senderUserID, text: text, timestamp: timestamp, status: .pending)
     }
 
+    @discardableResult
+    public func insertIncomingMessage(
+        id: String,
+        conversationID: String,
+        senderUserID: String,
+        text: String,
+        timestamp: Int64
+    ) throws -> Bool {
+        let existed = !(try context.selectAll(
+            sql: "SELECT id FROM messages WHERE id=?",
+            parameters: [.text(id)]
+        ).isEmpty)
+        try context.exec(
+            sql: """
+                INSERT OR IGNORE INTO messages
+                (id,conversation_id,sender_user_id,text,timestamp,status)
+                VALUES (?,?,?,?,?,'delivered')
+                """,
+            parameters: [
+                .text(id), .text(conversationID), .text(senderUserID),
+                .text(text), .integer(timestamp),
+            ]
+        )
+        let inserted = !existed
+        if inserted, fullTextSearchAvailable {
+            try context.exec(
+                sql: "INSERT INTO messages_fts(rowid,text) SELECT rowid,text FROM messages WHERE id=? AND rowid NOT IN (SELECT rowid FROM messages_fts)",
+                parameters: [.text(id)]
+            )
+        }
+        return inserted
+    }
+
     public func recordSystemEvent(conversationID: String, event: SystemEvent, id: String? = nil) throws -> Message {
         let messageID = id ?? UUIDv7.generate()
         let timestamp = databaseNow()
@@ -274,6 +307,24 @@ public final class LocalDatabase {
                               parameters: [.text(conversationID)]).compactMap(Self.message)
     }
 
+    public func conversation(id: String) throws -> Conversation? {
+        try context.selectAll(
+            sql: "SELECT id,other_user_id,title,is_group,group_role FROM conversations WHERE id=?",
+            parameters: [.text(id)]
+        ).compactMap { row -> Conversation? in
+            guard row.count == 5, let id = row[0].textValue, let otherUserID = row[1].textValue,
+                  let title = row[2].textValue, let isGroup = row[3].longValue else { return nil }
+            return Conversation(
+                id: id,
+                otherUserID: otherUserID,
+                title: title,
+                lastMessage: nil,
+                isGroup: isGroup != 0,
+                groupRole: row[4].textValue.flatMap(GroupRole.init(rawValue:))
+            )
+        }.first
+    }
+
     public func pendingOutbox(now: Int64? = nil) throws -> [Message] {
         let now = now ?? databaseNow()
         return try context.selectAll(sql: """
@@ -284,7 +335,25 @@ public final class LocalDatabase {
     }
 
     public func updateMessageStatus(id: String, status: MessageStatus) throws {
-        try context.exec(sql: "UPDATE messages SET status=? WHERE id=?", parameters: [.text(status.rawValue), .text(id)])
+        try context.exec(
+            sql: """
+                UPDATE messages SET status=?
+                WHERE id=? AND CASE status
+                  WHEN 'pending' THEN 0
+                  WHEN 'sent' THEN 1
+                  WHEN 'delivered' THEN 2
+                  WHEN 'read' THEN 3
+                  WHEN 'failed' THEN 0
+                  ELSE 0 END <= CASE ?
+                  WHEN 'pending' THEN 0
+                  WHEN 'sent' THEN 1
+                  WHEN 'delivered' THEN 2
+                  WHEN 'read' THEN 3
+                  WHEN 'failed' THEN 0
+                  ELSE 0 END
+                """,
+            parameters: [.text(status.rawValue), .text(id), .text(status.rawValue)]
+        )
         if status == .sent || status == .delivered || status == .read { try context.exec(sql: "DELETE FROM outbox WHERE message_id=?", parameters: [.text(id)]) }
     }
 

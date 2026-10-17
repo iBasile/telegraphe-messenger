@@ -31,7 +31,7 @@ export const isValidUUID = (value: unknown): value is string =>
 
 const textMessage = z.object({
   recipientUserId: z.string().uuid(),
-  recipientDeviceId: z.string().uuid(),
+  recipientDeviceId: z.string().uuid().optional(),
   text: z.string().trim().min(1).max(4000),
 });
 
@@ -226,10 +226,6 @@ async function handleConnection(
       send(errorEnvelope('INVALID_TEXT', 'Message texte invalide'));
       return;
     }
-    if (auth.deviceId === parsed.data.recipientDeviceId) {
-      send(errorEnvelope('INVALID_RECIPIENT', 'Impossible d’envoyer un message à son propre appareil'));
-      return;
-    }
     const groupCheck = await options.db.query('SELECT 1 FROM conversations WHERE id=$1', [
       incoming.conversationId,
     ]);
@@ -281,33 +277,39 @@ async function handleConnection(
       );
       return;
     }
-    const recipient = await options.db.query<{ user_id: string }>(
-      'SELECT user_id FROM devices WHERE id=$1',
-      [parsed.data.recipientDeviceId],
+    const recipients = await options.db.query<{ id: string }>(
+      'SELECT id FROM devices WHERE user_id=$1 ORDER BY created_at ASC',
+      [parsed.data.recipientUserId],
     );
-    if (!recipient.rowCount || recipient.rows[0].user_id !== parsed.data.recipientUserId) {
+    if (!recipients.rowCount) {
       send(errorEnvelope('RECIPIENT_NOT_FOUND', 'Destinataire introuvable'));
       return;
     }
-    const stored = await options.mailbox.store({
-      recipientUserId: parsed.data.recipientUserId,
-      recipientDeviceId: parsed.data.recipientDeviceId,
-      senderUserId: auth.sub,
-      conversationId: incoming.conversationId,
-      clientId: incoming.clientId,
-      envelope: envelope(incoming),
-    });
-    if (!stored.duplicate) {
-      const live = await options.router.route(parsed.data.recipientDeviceId, envelope(incoming));
-      if (!live)
-        await options.notificationQueue?.enqueue({
-          deviceId: parsed.data.recipientDeviceId,
-          clientId: incoming.clientId,
-        });
-      options.metrics &&
-        ((options.metrics.deliveryLatencySeconds +=
-          Math.max(0, Date.now() - Number(incoming.timestampMs ?? Date.now())) / 1000),
-        (options.metrics.deliveredMessages += 1));
+    let duplicate = true;
+    let mailboxId: number | undefined;
+    for (const recipient of recipients.rows) {
+      const stored = await options.mailbox.store({
+        recipientUserId: parsed.data.recipientUserId,
+        recipientDeviceId: recipient.id,
+        senderUserId: auth.sub,
+        conversationId: incoming.conversationId,
+        clientId: incoming.clientId,
+        envelope: envelope(incoming),
+      });
+      duplicate = duplicate && stored.duplicate;
+      mailboxId ??= stored.id;
+      if (!stored.duplicate) {
+        const live = await options.router.route(recipient.id, envelope(incoming));
+        if (!live)
+          await options.notificationQueue?.enqueue({
+            deviceId: recipient.id,
+            clientId: incoming.clientId,
+          });
+        options.metrics &&
+          ((options.metrics.deliveryLatencySeconds +=
+            Math.max(0, Date.now() - Number(incoming.timestampMs ?? Date.now())) / 1000),
+          (options.metrics.deliveredMessages += 1));
+      }
     }
     send(
       envelope({
@@ -320,8 +322,8 @@ async function handleConnection(
         payload: ServerAckCodec.encode({
           messageClientId: incoming.clientId,
           accepted: true,
-          duplicate: stored.duplicate,
-          mailboxId: stored.id,
+          duplicate,
+          mailboxId,
         }).finish(),
       }),
     );
