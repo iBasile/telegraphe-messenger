@@ -46,6 +46,11 @@ public protocol AuthenticationClient: Sendable {
     func confirmPasswordReset(token: String, password: String) async throws
 }
 
+public protocol AccessTokenProvider: Sendable {
+    func accessToken() async throws -> String
+    func refreshAccessToken() async throws -> String
+}
+
 public struct ServerAuthenticationClient: AuthenticationClient {
     public let http: any HTTPClient
     public init(http: any HTTPClient) {
@@ -184,10 +189,24 @@ public actor AuthService {
     }
 
     public func refresh() async throws {
-        guard let refresh = storage.string(forKey: refreshStorageKey) else { throw AuthError.notAuthenticated }
+        guard let refresh = storage.string(forKey: refreshStorageKey) else {
+            throw AuthError.notAuthenticated
+        }
         let refreshed = try await client.refresh(refresh, deviceID: deviceID())
         try save(refreshed)
         tokens = refreshed
+    }
+
+    public func accessToken() async throws -> String {
+        guard let token = tokens?.accessToken ?? storage.string(forKey: accessStorageKey) else {
+            throw AuthError.notAuthenticated
+        }
+        return token
+    }
+
+    public func refreshAccessToken() async throws -> String {
+        try await refresh()
+        return try await accessToken()
     }
 
     public func logout() async throws {
@@ -207,10 +226,6 @@ public actor AuthService {
     public func confirmPasswordReset(token: String, password: String, confirmation: String) async throws {
         try validate(email: "reset@example.com", password: password, confirmation: confirmation, displayName: "reset")
         try await client.confirmPasswordReset(token: token, password: password)
-    }
-
-    public func accessToken() -> String? {
-        tokens?.accessToken ?? storage.string(forKey: accessStorageKey)
     }
 
     func deviceID() -> String {

@@ -5,24 +5,37 @@ public actor MessagingSynchronizer {
     public let transport: any MessageTransport
     public let mailbox: any MailboxHTTPClient
     public let codec: any ProtocolCodec
+    public let tokenProvider: (any AccessTokenProvider)?
 
     public init(
         database: LocalDatabase,
         transport: any MessageTransport,
         mailbox: any MailboxHTTPClient,
-        codec: any ProtocolCodec = ProtobufProtocolCodec()
+        codec: any ProtocolCodec = ProtobufProtocolCodec(),
+        tokenProvider: (any AccessTokenProvider)? = nil
     ) {
         self.database = database
         self.transport = transport
         self.mailbox = mailbox
         self.codec = codec
+        self.tokenProvider = tokenProvider
     }
 
     public func synchronize(accessToken: String, deviceID: String) async throws {
-        try await transport.connect(accessToken: accessToken, deviceID: deviceID)
-        try await recover(accessToken: accessToken, deviceID: deviceID)
+        var currentToken = accessToken
+        if let tokenProvider {
+            try await ConnectionManager(transport: transport).connect(
+                accessToken: accessToken,
+                deviceID: deviceID,
+                tokenProvider: tokenProvider
+            )
+            currentToken = try await tokenProvider.accessToken()
+        } else {
+            try await transport.connect(accessToken: accessToken, deviceID: deviceID)
+        }
+        currentToken = try await recover(accessToken: currentToken, deviceID: deviceID)
         while !Task.isCancelled {
-            try await process(try await transport.receive(), accessToken: accessToken, deviceID: deviceID)
+            try await process(try await transport.receive(), accessToken: currentToken, deviceID: deviceID)
         }
     }
 
@@ -30,14 +43,36 @@ public actor MessagingSynchronizer {
         await transport.close()
     }
 
-    private func recover(accessToken: String, deviceID: String) async throws {
+    private func recover(accessToken: String, deviceID: String) async throws -> String {
         let current = try database.cursor(deviceID: deviceID)
-        let result = try await mailbox.pending(cursor: current, accessToken: accessToken)
-        for item in result.items {
+        var currentToken = accessToken
+        var didRefresh = false
+        let result: (cursor: Int64, items: [MailboxItem])
+        do {
+            result = try await mailbox.pending(cursor: current, accessToken: currentToken)
+        } catch MessagingAPIError.requestFailed(401) {
+            guard !didRefresh, let tokenProvider else { throw AuthError.notAuthenticated }
+            currentToken = try await tokenProvider.refreshAccessToken()
+            didRefresh = true
+            result = try await mailbox.pending(cursor: current, accessToken: currentToken)
+        }
+        for item in result.items.sorted(by: { $0.id < $1.id }) {
             try await process(try codec.decode(item.envelope), accessToken: accessToken, deviceID: deviceID)
-            try await mailbox.acknowledge(clientID: item.clientID, accessToken: accessToken)
+            do {
+                try await mailbox.acknowledge(clientID: item.clientID, accessToken: currentToken)
+            } catch MessagingAPIError.requestFailed(401) {
+                guard !didRefresh, let tokenProvider else { throw AuthError.notAuthenticated }
+                currentToken = try await tokenProvider.refreshAccessToken()
+                didRefresh = true
+                try await mailbox.acknowledge(clientID: item.clientID, accessToken: currentToken)
+            }
             try database.setCursor(deviceID: deviceID, cursor: item.id)
         }
+        return currentToken
+    }
+
+    public func processIncoming(_ envelope: ProtocolEnvelope, deviceID: String) async throws {
+        try await process(envelope, accessToken: "", deviceID: deviceID)
     }
 
     private func process(

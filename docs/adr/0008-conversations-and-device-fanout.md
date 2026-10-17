@@ -28,3 +28,11 @@ destinataire. Un accusé `DELIVERED` reste associé à l’appareil qui l’a é
 ce qui permet au serveur d’avancer le curseur de cette seule boîte aux lettres.
 Les appareils multiples sont ainsi pris en charge au niveau du transport sans
 changer l’identité de la conversation.
+
+## Rattrapage
+
+Le client traite les éléments de boîte aux lettres par identifiant croissant.
+Pour chaque élément, il insère d’abord l’enveloppe de façon idempotente, envoie
+ensuite `DELIVERED`, puis avance son curseur local. Comme le serveur supprime
+tout jusqu’à l’identifiant accusé, aucun accusé d’un élément plus récent n’est
+émis tant qu’un élément plus ancien n’a pas été traité.

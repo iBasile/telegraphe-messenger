@@ -110,6 +110,7 @@ public enum TransportError: Error, Equatable {
     case notConnected
     case unsupportedProtocol
     case invalidEnvelope
+    case authenticationRequired
 }
 
 public enum ConnectionState: Equatable, Sendable {
@@ -146,6 +147,23 @@ public actor ConnectionManager {
                 delay = min(maxDelay, delay * 2)
             }
         }
+    }
+
+    public func connect(
+        accessToken: String,
+        deviceID: String,
+        tokenProvider: any AccessTokenProvider
+    ) async throws {
+        stopped = false
+        state = .connecting
+        do {
+            try await transport.connect(accessToken: accessToken, deviceID: deviceID)
+        } catch {
+            guard !stopped else { throw error }
+            let refreshed = try await tokenProvider.refreshAccessToken()
+            try await transport.connect(accessToken: refreshed, deviceID: deviceID)
+        }
+        state = .connected
     }
 
     public func disconnect() async {

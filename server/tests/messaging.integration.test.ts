@@ -31,15 +31,18 @@ describe.skipIf(!enabled)('WebSocket messaging integration', () => {
     const recipientUser = randomUUID();
     const senderDevice = randomUUID();
     const recipientDevice = randomUUID();
+    const recipientSecondDevice = randomUUID();
     await db.query(
       `INSERT INTO users (id,email,password_hash,display_name,email_verified_at)
        VALUES ($1,$2,'test','Sender',now()),($3,$4,'test','Recipient',now())`,
       [senderUser, `${senderUser}@example.com`, recipientUser, `${recipientUser}@example.com`],
     );
-    await db.query(`INSERT INTO devices (id,user_id) VALUES ($1,$2),($3,$4)`, [
+    await db.query(`INSERT INTO devices (id,user_id) VALUES ($1,$2),($3,$4),($5,$6)`, [
       senderDevice,
       senderUser,
       recipientDevice,
+      recipientUser,
+      recipientSecondDevice,
       recipientUser,
     ]);
 
@@ -52,18 +55,24 @@ describe.skipIf(!enabled)('WebSocket messaging integration', () => {
     });
     const senderToken = app.jwt.sign({ sub: senderUser, deviceId: senderDevice });
     const recipientToken = app.jwt.sign({ sub: recipientUser, deviceId: recipientDevice });
+    const recipientSecondToken = app.jwt.sign({ sub: recipientUser, deviceId: recipientSecondDevice });
     const address = await app.listen({ port: 0, host: '127.0.0.1' });
     const wsUrl = address.replace('http', 'ws') + '/ws';
     const sender = new WebSocket(wsUrl, { headers: { authorization: `Bearer ${senderToken}` } });
+    const recipientSecond = new WebSocket(wsUrl, {
+      headers: { authorization: `Bearer ${recipientSecondToken}` },
+    });
     const recipient = new WebSocket(wsUrl, {
       headers: { authorization: `Bearer ${recipientToken}` },
     });
-    await Promise.all([waitForOpen(sender), waitForOpen(recipient)]);
+    await Promise.all([waitForOpen(sender), waitForOpen(recipient), waitForOpen(recipientSecond)]);
     sendHandshake(sender, senderDevice);
     sendHandshake(recipient, recipientDevice);
+    sendHandshake(recipientSecond, recipientSecondDevice);
     await Promise.all([
       waitForType(sender, EnvelopeType.HANDSHAKE_ACK),
       waitForType(recipient, EnvelopeType.HANDSHAKE_ACK),
+      waitForType(recipientSecond, EnvelopeType.HANDSHAKE_ACK),
     ]);
 
     const conversationId = randomUUID();
@@ -75,8 +84,9 @@ describe.skipIf(!enabled)('WebSocket messaging integration', () => {
     });
     sender.send(Buffer.from(EnvelopeCodec.encode(live).finish()));
     const liveReceived = waitForType(recipient, EnvelopeType.SEND_TEXT);
+    const secondLiveReceived = waitForType(recipientSecond, EnvelopeType.SEND_TEXT);
     await waitForType(sender, EnvelopeType.SERVER_ACK);
-    await liveReceived;
+    await Promise.all([liveReceived, secondLiveReceived]);
     const delivered = receipt(
       conversationId,
       live.clientId!,
@@ -131,8 +141,9 @@ describe.skipIf(!enabled)('WebSocket messaging integration', () => {
     expect(duplicateDeliveries).toBe(0);
 
     recipientAgain.close();
+    recipientSecond.close();
     sender.close();
-    await Promise.all([waitForClose(sender), waitForClose(recipientAgain)]);
+    await Promise.all([waitForClose(sender), waitForClose(recipientAgain), waitForClose(recipientSecond)]);
     await app.close();
     await db.query('DELETE FROM users WHERE id IN ($1,$2)', [senderUser, recipientUser]);
     await db.end();

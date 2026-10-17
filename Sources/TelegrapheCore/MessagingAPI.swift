@@ -18,8 +18,15 @@ public protocol MailboxHTTPClient: Sendable {
 
 public struct ServerMailboxHTTPClient: MailboxHTTPClient {
     public let http: any HTTPClient
+    public let tokenProvider: (any AccessTokenProvider)?
     public init(http: any HTTPClient) {
         self.http = http
+        self.tokenProvider = nil
+    }
+
+    public init(http: any HTTPClient, tokenProvider: any AccessTokenProvider) {
+        self.http = http
+        self.tokenProvider = tokenProvider
     }
 
     public func pending(cursor: Int64, accessToken: String) async throws -> (cursor: Int64, items: [MailboxItem]) {
@@ -48,6 +55,24 @@ public struct ServerMailboxHTTPClient: MailboxHTTPClient {
             headers: ["Authorization": "Bearer \(accessToken)"]
         )
         guard response.statusCode == 204 else { throw MessagingAPIError.requestFailed(response.statusCode) }
+    }
+
+    public func pending(cursor: Int64) async throws -> (cursor: Int64, items: [MailboxItem]) {
+        guard let tokenProvider else { throw AuthError.notAuthenticated }
+        do {
+            return try await pending(cursor: cursor, accessToken: tokenProvider.accessToken())
+        } catch MessagingAPIError.requestFailed(401) {
+            return try await pending(cursor: cursor, accessToken: tokenProvider.refreshAccessToken())
+        }
+    }
+
+    public func acknowledge(clientID: String) async throws {
+        guard let tokenProvider else { throw AuthError.notAuthenticated }
+        do {
+            try await acknowledge(clientID: clientID, accessToken: tokenProvider.accessToken())
+        } catch MessagingAPIError.requestFailed(401) {
+            try await acknowledge(clientID: clientID, accessToken: tokenProvider.refreshAccessToken())
+        }
     }
 }
 
