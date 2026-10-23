@@ -1,6 +1,6 @@
 import Foundation
 import SkipSQLCore
-import SkipSQL
+import SkipSQLPlus
 
 public enum MessageStatus: String, Codable, Sendable, CaseIterable {
     case pending
@@ -100,11 +100,11 @@ public final class LocalDatabase {
     public private(set) var fullTextSearchAvailable = false
 
     public init() {
-        context = SQLContext(configuration: .platform)
+        context = SQLContext(configuration: .plus)
     }
 
     public init(path: String) throws {
-        context = try SQLContext(path: path, configuration: .platform)
+        context = try SQLContext(path: path, configuration: .plus)
     }
 
     public static func applicationData() throws -> LocalDatabase {

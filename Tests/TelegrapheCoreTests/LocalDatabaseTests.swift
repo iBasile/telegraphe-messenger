@@ -1,5 +1,21 @@
+import Foundation
 import Testing
 import TelegrapheCore
+
+@Test
+func freshDatabaseCanApplyMigrationsTwiceAndPersistData() throws {
+    let path = FileManager.default.temporaryDirectory
+        .appendingPathComponent("telegraphe-\(UUID().uuidString).sqlite")
+        .path
+    defer { try? FileManager.default.removeItem(atPath: path) }
+
+    let database = try LocalDatabase(path: path)
+    try database.migrate()
+    try database.migrate()
+    try database.insertItem(title: "Base vierge")
+
+    #expect(try database.items().map(\.title) == ["Base vierge"])
+}
 
 @Test
 func databaseMigrationsPersistenceAndFullTextSearch() throws {

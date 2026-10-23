@@ -23,13 +23,12 @@ let package = Package(
             "TelegrapheCore",
         ], resources: [.process("Resources")], plugins: [.plugin(name: "skipstone", package: "skip")]),
         .target(name: "TelegrapheCore", dependencies: [
-            .product(name: "SkipSQL", package: "skip-sql"),
+            .product(name: "SkipSQLPlus", package: "skip-sql"),
             .product(name: "SkipKeychain", package: "skip-keychain"),
             .product(name: "SwiftProtobuf", package: "swift-protobuf"),
         ], plugins: [.plugin(name: "skipstone", package: "skip")]),
         .testTarget(name: "TelegrapheCoreTests", dependencies: [
             "TelegrapheCore",
-            .product(name: "SkipSQL", package: "skip-sql"),
             .product(name: "SkipTest", package: "skip"),
         ], plugins: [.plugin(name: "skipstone", package: "skip")]),
     ]

@@ -59,4 +59,4 @@ Le test du Core couvre les migrations versionnées, l’insertion/lecture SQLite
 └── docs/adr/                       # décisions d’architecture
 ```
 
-La base locale SQLite via SkipSQL est la source de vérité du client. L’écran minimal lit sa liste depuis `TelegrapheCore`; le réseau et la messagerie seront ajoutés dans les phases suivantes.
+La base locale SQLite via SkipSQLPlus est la source de vérité du client. SkipSQLPlus embarque SQLite et FTS5 de manière uniforme sur iOS et Android ; `TelegrapheCore` conserve un repli `LIKE` si FTS5 n'est pas disponible. L’écran minimal lit sa liste depuis `TelegrapheCore`; le réseau et la messagerie seront ajoutés dans les phases suivantes.
